@@ -1,0 +1,59 @@
+import { sunCycleBrightness, sunDirection, type SunCycle } from "./light";
+
+export class LightDebug {
+  private cycle: SunCycle = { angle: 0, night: false };
+  private readonly root: HTMLElement;
+  private readonly value: HTMLElement;
+  private readonly level: HTMLElement;
+  private readonly decrease: HTMLButtonElement;
+  private readonly increase: HTMLButtonElement;
+
+  constructor() {
+    const root = document.querySelector<HTMLElement>("#debug");
+    const value = document.querySelector<HTMLElement>("#light-value");
+    const level = document.querySelector<HTMLElement>("#light-level");
+    const decrease = document.querySelector<HTMLButtonElement>("#light-dec");
+    const increase = document.querySelector<HTMLButtonElement>("#light-inc");
+    if (!root || !value || !level || !decrease || !increase) throw new Error("missing debug menu");
+    this.root = root;
+    this.value = value;
+    this.level = level;
+    this.decrease = decrease;
+    this.increase = increase;
+    decrease.disabled = true;
+    increase.disabled = true;
+    this.refresh();
+  }
+
+  get open(): boolean {
+    return !this.root.hidden;
+  }
+
+  toggle(): void {
+    this.root.hidden = !this.root.hidden;
+  }
+
+  follow(cycle: SunCycle): void {
+    this.cycle = cycle;
+    this.refresh();
+  }
+
+  brightness(): number {
+    return sunCycleBrightness(this.cycle);
+  }
+
+  showBrightness(intensity: number): void {
+    this.level.textContent = `Brightness ${Math.round(intensity * 100)}%`;
+  }
+
+  direction(): [number, number, number] {
+    return sunDirection(this.cycle.angle);
+  }
+
+  private refresh(): void {
+    const shown = Math.round(this.cycle.angle * 10) / 10;
+    const text = Math.abs(shown).toFixed(1);
+    const sign = shown > 0 ? "+" : shown < 0 ? "-" : "";
+    this.value.textContent = `${sign}${text}°`;
+  }
+}

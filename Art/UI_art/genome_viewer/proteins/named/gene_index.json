@@ -1,0 +1,859 @@
+{
+  "note": "Concept art based on the user-provided 86-gene list. Structures and localization are proposed visual choices, not experimentally determined folds or edits to the vault. R=membrane sensory receptor; I=intracellular soluble sensor/receptor; M=membrane protein/apparatus, not sensory receptor; P=other protein, no bilayer in this art. Some sprites represent assemblies rather than individual polypeptides. Sheets are labeled concept atlases, not validated pixel-perfect engine assets.",
+  "sheets": [
+    {
+      "id": "01_uptake",
+      "cols": 3,
+      "rows": 3,
+      "genes": [
+        {
+          "code": "GLYP",
+          "name": "Glycon Permease",
+          "type": "M",
+          "color": "dusty teal",
+          "shape": "two opposed six-helix lobes framing a narrow hourglass gate",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "LIPP",
+          "name": "Lipron Permease",
+          "type": "M",
+          "color": "dusty mauve",
+          "shape": "broad asymmetrical helix bundle with lateral slit",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "NITP",
+          "name": "Nitrox Permease",
+          "type": "M",
+          "color": "sage green",
+          "shape": "compact threefold helical pore with tapered mouth",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "SLFP",
+          "name": "Sulfex Permease",
+          "type": "M",
+          "color": "muted ochre",
+          "shape": "V-shaped paired helical gate with deep cleft",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "FERP",
+          "name": "Ferron Permease",
+          "type": "M",
+          "color": "rust copper",
+          "shape": "square four-lobed transporter with small lower ATPase lobe",
+          "row": 2,
+          "column": 2
+        },
+        {
+          "code": "CBXP",
+          "name": "Carbex Permease",
+          "type": "M",
+          "color": "slate blue",
+          "shape": "curved six-helix cradle and asymmetric lower hook",
+          "row": 2,
+          "column": 3
+        },
+        {
+          "code": "OXDP",
+          "name": "Oxidex Permease",
+          "type": "M",
+          "color": "dusty rose",
+          "shape": "small narrow straight helical pore with upper funnel",
+          "row": 3,
+          "column": 1
+        },
+        {
+          "code": "FRMP",
+          "name": "Fermentate Permease",
+          "type": "M",
+          "color": "gray lavender",
+          "shape": "tilted twin-barrel transporter with zigzag loop",
+          "row": 3,
+          "column": 2
+        },
+        {
+          "code": "SIDP",
+          "name": "Siderin Permease",
+          "type": "M",
+          "color": "pale olive",
+          "shape": "large open beta barrel with off-center plug domain",
+          "row": 3,
+          "column": 3
+        }
+      ],
+      "file": "01_uptake.png"
+    },
+    {
+      "id": "02_extracellular_digestion",
+      "cols": 3,
+      "rows": 2,
+      "genes": [
+        {
+          "code": "GLYH",
+          "name": "Glycon Hydrolase",
+          "type": "P",
+          "color": "dusty teal",
+          "shape": "open horseshoe alpha-beta enzyme with deep substrate groove",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "LIPH",
+          "name": "Lipron Hydrolase",
+          "type": "P",
+          "color": "dusty mauve",
+          "shape": "compact globule with raised helical lid and slit",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "AZOH",
+          "name": "Azoite Hydrolase",
+          "type": "P",
+          "color": "sage green",
+          "shape": "unequal paired lobes with long catalytic cleft",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "THNL",
+          "name": "Thionite Lyase",
+          "type": "P",
+          "color": "muted ochre",
+          "shape": "triangular beta prism with one projecting helix",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "FCTR",
+          "name": "Ferracite Reductase",
+          "type": "P",
+          "color": "rust copper",
+          "shape": "stepped three-domain electron transfer chain folded in an S",
+          "row": 2,
+          "column": 2
+        }
+      ],
+      "file": "02_extracellular_digestion.png"
+    },
+    {
+      "id": "03_energy_and_fluorescence",
+      "cols": 3,
+      "rows": 3,
+      "genes": [
+        {
+          "code": "FLUX",
+          "name": "Fluxidase",
+          "type": "P",
+          "color": "gray lavender",
+          "shape": "asymmetric open spiral enzyme with central catalytic pocket",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "ATPS",
+          "name": "ATP Synthase",
+          "type": "M",
+          "color": "pale ochre",
+          "shape": "distinct ATP synthase turbine: membrane rotor ring, narrow stalk, large three-lobed catalytic head BELOW membrane",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "OXDR",
+          "name": "Oxidex Reductase",
+          "type": "M",
+          "color": "dusty rose",
+          "shape": "wide four-helix respiratory complex with two cytoplasmic lobes",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "SLFR",
+          "name": "Sulfex Reductase",
+          "type": "P",
+          "color": "muted olive",
+          "shape": "paired broad beta lobes bridged by small helices",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "RDCD",
+          "name": "Reducin Dehydrogenase",
+          "type": "P",
+          "color": "slate blue",
+          "shape": "two unequal Rossmann-like alpha-beta domains forming angled clamp",
+          "row": 2,
+          "column": 2
+        },
+        {
+          "code": "RFP",
+          "name": "Red Fluorescent Protein",
+          "type": "P",
+          "color": "muted red",
+          "shape": "upright compact eleven-strand beta barrel with short loop cap",
+          "row": 2,
+          "column": 3
+        },
+        {
+          "code": "GFP",
+          "name": "Green Fluorescent Protein",
+          "type": "P",
+          "color": "muted green",
+          "shape": "slightly tilted compact beta barrel with small lower loop",
+          "row": 3,
+          "column": 1
+        },
+        {
+          "code": "YFP",
+          "name": "Yellow Fluorescent Protein",
+          "type": "P",
+          "color": "muted yellow ochre",
+          "shape": "squat beta barrel with broad upper loop crown",
+          "row": 3,
+          "column": 2
+        },
+        {
+          "code": "BFP",
+          "name": "Blue Fluorescent Protein",
+          "type": "P",
+          "color": "muted blue",
+          "shape": "narrow diagonal beta barrel with two small end loops",
+          "row": 3,
+          "column": 3
+        }
+      ],
+      "file": "03_energy_and_fluorescence.png"
+    },
+    {
+      "id": "04_phototrophy_and_biosynthesis",
+      "cols": 4,
+      "rows": 3,
+      "genes": [
+        {
+          "code": "RHDS",
+          "name": "Rhodin Synthase",
+          "type": "P",
+          "color": "dusty mauve",
+          "shape": "bent elongated two-domain enzyme with narrow central groove",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "PHOR",
+          "name": "Photorhodin",
+          "type": "M",
+          "color": "dusty plum",
+          "shape": "compact seven-helix membrane pump bundle with short curled tails; NOT a receptor",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "CHLS",
+          "name": "Chlorin Synthase",
+          "type": "P",
+          "color": "sage green",
+          "shape": "flat crescent beta fan wrapping a central helical pocket",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "RXNC",
+          "name": "Reaction Center",
+          "type": "M",
+          "color": "muted olive",
+          "shape": "broad asymmetric membrane reaction-center complex with paired upper lobes; NOT receptor",
+          "row": 1,
+          "column": 4
+        },
+        {
+          "code": "CRTS",
+          "name": "Carotin Synthase",
+          "type": "P",
+          "color": "clay copper",
+          "shape": "long curved tunnel enzyme formed by three helical lobes",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "PHYS",
+          "name": "Phycin Synthase",
+          "type": "P",
+          "color": "smoky blue",
+          "shape": "three-pronged helical enzyme with center pocket",
+          "row": 2,
+          "column": 2
+        },
+        {
+          "code": "GLYS",
+          "name": "Glycon Synthase",
+          "type": "P",
+          "color": "dusty teal",
+          "shape": "two cupped beta domains forming open clamshell",
+          "row": 2,
+          "column": 3
+        },
+        {
+          "code": "NITA",
+          "name": "Nitrox Assimilase",
+          "type": "P",
+          "color": "sage green",
+          "shape": "compact hexameric enzyme ring in oblique view",
+          "row": 2,
+          "column": 4
+        },
+        {
+          "code": "ANAB",
+          "name": "Anabolase",
+          "type": "P",
+          "color": "gray lavender",
+          "shape": "asymmetric three-domain assembly with one large and two small lobes",
+          "row": 3,
+          "column": 1
+        },
+        {
+          "code": "GRNS",
+          "name": "Granulin Synthase",
+          "type": "P",
+          "color": "pale ochre",
+          "shape": "rounded helix-rich enzyme with a deep U-shaped cleft",
+          "row": 3,
+          "column": 2
+        },
+        {
+          "code": "GRNH",
+          "name": "Granulin Hydrolase",
+          "type": "P",
+          "color": "clay copper",
+          "shape": "angular beta-rich wedge with small helical lid",
+          "row": 3,
+          "column": 3
+        },
+        {
+          "code": "SIDS",
+          "name": "Siderin Synthase",
+          "type": "P",
+          "color": "rust copper",
+          "shape": "long articulated three-module enzyme in a bent chain",
+          "row": 3,
+          "column": 4
+        }
+      ],
+      "file": "04_phototrophy_and_biosynthesis.png"
+    },
+    {
+      "id": "05_homeostasis",
+      "cols": 4,
+      "rows": 4,
+      "genes": [
+        {
+          "code": "PPMP",
+          "name": "Protopump",
+          "type": "M",
+          "color": "dusty rose",
+          "shape": "compact membrane helical pump with large lower catalytic lever domain",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "ACDT",
+          "name": "Acid Tolerase",
+          "type": "P",
+          "color": "dusty mauve",
+          "shape": "tight four-helix knot with protective outer loops",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "OSMS",
+          "name": "Osmolyn Synthase",
+          "type": "P",
+          "color": "gray lavender",
+          "shape": "paired rounded catalytic lobes with central cleft",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "AQUP",
+          "name": "Aquaporin",
+          "type": "M",
+          "color": "slate blue",
+          "shape": "four-petal tetramer of narrow water channels with tiny central apertures",
+          "row": 1,
+          "column": 4
+        },
+        {
+          "code": "HSP",
+          "name": "Heat Shock Protein",
+          "type": "P",
+          "color": "muted ochre",
+          "shape": "double-ring chaperonin barrel with wide open mouth",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "CSP",
+          "name": "Cold Shock Protein",
+          "type": "P",
+          "color": "pale blue gray",
+          "shape": "small simple five-strand beta barrel, much smaller than HSP",
+          "row": 2,
+          "column": 2
+        },
+        {
+          "code": "MSAT",
+          "name": "Membrane Saturase",
+          "type": "M",
+          "color": "sage green",
+          "shape": "short membrane helix bundle with smooth domed cytoplasmic head",
+          "row": 2,
+          "column": 3
+        },
+        {
+          "code": "MDES",
+          "name": "Membrane Desaturase",
+          "type": "M",
+          "color": "dusty teal",
+          "shape": "membrane helical wedge with bifurcated lower catalytic head",
+          "row": 2,
+          "column": 4
+        },
+        {
+          "code": "OXDT",
+          "name": "Oxidex Detoxase",
+          "type": "P",
+          "color": "dusty rose",
+          "shape": "four compact lobes in asymmetric square with center pocket",
+          "row": 3,
+          "column": 1
+        },
+        {
+          "code": "PHPR",
+          "name": "Photoprotectin",
+          "type": "P",
+          "color": "muted ochre",
+          "shape": "broad curved beta-sheet shield with narrow helix brace",
+          "row": 3,
+          "column": 2
+        },
+        {
+          "code": "REPR",
+          "name": "Repairase",
+          "type": "P",
+          "color": "smoky blue",
+          "shape": "open C-shaped enzyme clamp with small accessory domain",
+          "row": 3,
+          "column": 3
+        },
+        {
+          "code": "LYSR",
+          "name": "Lysin Resistase",
+          "type": "P",
+          "color": "dusty mauve",
+          "shape": "two interlocking beta lobes forming a hooked inhibitor",
+          "row": 3,
+          "column": 4
+        },
+        {
+          "code": "DEFN",
+          "name": "Envelope Defensin",
+          "type": "M",
+          "color": "sage green",
+          "shape": "short anchored helical stem with small external folded cap",
+          "row": 4,
+          "column": 1
+        }
+      ],
+      "file": "05_homeostasis.png"
+    },
+    {
+      "id": "06_morphology",
+      "cols": 4,
+      "rows": 4,
+      "genes": [
+        {
+          "code": "ENVT",
+          "name": "Envelope Thickener",
+          "type": "M",
+          "color": "pale ochre",
+          "shape": "membrane anchor supporting broad extracellular bricklike beta domain",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "CAPS",
+          "name": "Capsulin Synthase",
+          "type": "M",
+          "color": "gray lavender",
+          "shape": "membrane pore with large asymmetric lower synthesis lobe",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "SHPD",
+          "name": "Shape Determinant",
+          "type": "P",
+          "color": "slate blue",
+          "shape": "short curved polymer of three globular actin-like domains",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "CRST",
+          "name": "Crescentin",
+          "type": "P",
+          "color": "dusty teal",
+          "shape": "slender strongly curved coiled-coil crescent filament",
+          "row": 1,
+          "column": 4
+        },
+        {
+          "code": "ELGN",
+          "name": "Elongin",
+          "type": "P",
+          "color": "sage green",
+          "shape": "long straight double-helical rod with small end domains",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "GRTN",
+          "name": "Girthin",
+          "type": "P",
+          "color": "dusty mauve",
+          "shape": "wide open curved belt of four folded domains",
+          "row": 2,
+          "column": 2
+        },
+        {
+          "code": "SIZR",
+          "name": "Size Regulator",
+          "type": "P",
+          "color": "smoky blue",
+          "shape": "compact unequal two-lobed clamp with a tiny sensing loop",
+          "row": 2,
+          "column": 3
+        },
+        {
+          "code": "BUOY",
+          "name": "Buoyin",
+          "type": "P",
+          "color": "pale blue gray",
+          "shape": "open elongated gas-vesicle-like ribbed protein cage with pointed ends; no membrane",
+          "row": 2,
+          "column": 4
+        },
+        {
+          "code": "FLOA",
+          "name": "Floatin",
+          "type": "P",
+          "color": "sage green",
+          "shape": "light open three-armed protein scaffold with broad negative spaces",
+          "row": 3,
+          "column": 1
+        },
+        {
+          "code": "BALA",
+          "name": "Ballastin",
+          "type": "P",
+          "color": "rust copper",
+          "shape": "compact dense ferritin-like protein cage with small apertures; no mineral rock",
+          "row": 3,
+          "column": 2
+        },
+        {
+          "code": "ADHN",
+          "name": "Adhesin",
+          "type": "M",
+          "color": "dusty rose",
+          "shape": "long membrane-anchored stalk with folded sticky hook-shaped external head; not sensory receptor",
+          "row": 3,
+          "column": 3
+        },
+        {
+          "code": "MTXS",
+          "name": "Matrixin Synthase",
+          "type": "M",
+          "color": "dusty teal",
+          "shape": "membrane extrusion pore attached to crescent-shaped lower enzyme",
+          "row": 3,
+          "column": 4
+        },
+        {
+          "code": "LYSS",
+          "name": "Lysin Synthase",
+          "type": "P",
+          "color": "gray lavender",
+          "shape": "elongated two-domain enzyme with narrow catalytic tunnel",
+          "row": 4,
+          "column": 1
+        },
+        {
+          "code": "EFFI",
+          "name": "Effector Injector",
+          "type": "M",
+          "color": "slate blue",
+          "shape": "membrane basal ring with long narrow extracellular protein needle",
+          "row": 4,
+          "column": 2
+        },
+        {
+          "code": "BDEL",
+          "name": "Bdellase",
+          "type": "P",
+          "color": "clay copper",
+          "shape": "curved two-jawed beta-rich lytic enzyme with sharp deep cleft",
+          "row": 4,
+          "column": 3
+        }
+      ],
+      "file": "06_morphology.png"
+    },
+    {
+      "id": "07_motility",
+      "cols": 2,
+      "rows": 2,
+      "genes": [
+        {
+          "code": "FLGN",
+          "name": "Flagellin",
+          "type": "P",
+          "color": "dusty teal",
+          "shape": "single flagellin-like elongated protein with two long terminal helices and central beta-domain bulge; not whole flagellum",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "FLGM",
+          "name": "Flagellar Motor Protein",
+          "type": "M",
+          "color": "muted ochre",
+          "shape": "compact membrane rotor-stator ring with short axle and lower torque lobes",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "TAXR",
+          "name": "Taxis Regulator",
+          "type": "P",
+          "color": "gray lavender",
+          "shape": "small two-domain signaling switch with central beta sheet and three short helices",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "PILN",
+          "name": "Pilin",
+          "type": "P",
+          "color": "sage green",
+          "shape": "long narrow alpha helix ending in small beta-rich globular head; mature pilus subunit no membrane",
+          "row": 2,
+          "column": 2
+        }
+      ],
+      "file": "07_motility.png"
+    },
+    {
+      "id": "08_perception",
+      "cols": 3,
+      "rows": 3,
+      "genes": [
+        {
+          "code": "CHMR",
+          "name": "Chemoreceptor",
+          "type": "R",
+          "color": "dusty teal",
+          "shape": "paired extracellular ligand-binding heads, two membrane helices, long paired cytoplasmic coiled-coil tails",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "PCHR",
+          "name": "Photochrome",
+          "type": "I",
+          "color": "dusty mauve",
+          "shape": "soluble three-domain photosensor with central chromophore cleft; NO membrane",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "PHVC",
+          "name": "Photovector",
+          "type": "R",
+          "color": "slate blue",
+          "shape": "asymmetric membrane photosensor with broad beta-fan sensing head and small lower signaling lobe",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "THMR",
+          "name": "Thermoreceptor",
+          "type": "R",
+          "color": "clay copper",
+          "shape": "small upper helical sensor joined to membrane helix and open two-lobed lower signaling domain",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "OSMR",
+          "name": "Osmoreceptor",
+          "type": "R",
+          "color": "sage green",
+          "shape": "wide paired external sensor lobes with short membrane stems and compact lower kinase lobes",
+          "row": 2,
+          "column": 2
+        },
+        {
+          "code": "PRTR",
+          "name": "Protoreceptor",
+          "type": "R",
+          "color": "dusty rose",
+          "shape": "deeply cupped external sensing domain on thin membrane helix with lower round signaling lobe",
+          "row": 2,
+          "column": 3
+        },
+        {
+          "code": "RDXN",
+          "name": "Redoxin",
+          "type": "I",
+          "color": "smoky blue",
+          "shape": "soluble redox sensor small thioredoxin-like alpha-beta fold with exposed loop; NO membrane",
+          "row": 3,
+          "column": 1
+        },
+        {
+          "code": "QURR",
+          "name": "Quoron Receptor",
+          "type": "I",
+          "color": "gray lavender",
+          "shape": "soluble ligand-binding globular domain linked to smaller DNA-binding helical domain; NO membrane",
+          "row": 3,
+          "column": 2
+        },
+        {
+          "code": "DMGR",
+          "name": "Damage Receptor",
+          "type": "R",
+          "color": "pale ochre",
+          "shape": "membrane sensor with irregular hooked external head and distinctive forked cytoplasmic tail",
+          "row": 3,
+          "column": 3
+        }
+      ],
+      "file": "08_perception.png"
+    },
+    {
+      "id": "09_regulation",
+      "cols": 2,
+      "rows": 2,
+      "genes": [
+        {
+          "code": "REPX",
+          "name": "Repressor",
+          "type": "P",
+          "color": "dusty rose",
+          "shape": "compact symmetric dimer with inward-facing DNA-binding helical arms",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "ACTX",
+          "name": "Activator",
+          "type": "P",
+          "color": "sage green",
+          "shape": "open asymmetric dimer with outward-facing DNA-binding helical arms and upper ligand lobe",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "MEML",
+          "name": "Memory Latch",
+          "type": "P",
+          "color": "gray lavender",
+          "shape": "two mutually interlocked folded lobes with central clasp-shaped interface",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "QURS",
+          "name": "Quoron Synthase",
+          "type": "P",
+          "color": "dusty teal",
+          "shape": "small asymmetric alpha-beta enzyme with long curved catalytic groove",
+          "row": 2,
+          "column": 2
+        }
+      ],
+      "file": "09_regulation.png"
+    },
+    {
+      "id": "10_reproduction",
+      "cols": 3,
+      "rows": 2,
+      "genes": [
+        {
+          "code": "CONJ",
+          "name": "Conjugation Apparatus",
+          "type": "M",
+          "color": "clay copper",
+          "shape": "membrane basal complex with long external narrow pilus and small lower ATPase lobe",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "COMP",
+          "name": "Competence Uptake",
+          "type": "M",
+          "color": "slate blue",
+          "shape": "wide membrane uptake funnel with paired external grasping protein arms; no DNA drawn",
+          "row": 1,
+          "column": 2
+        },
+        {
+          "code": "PLSM",
+          "name": "Plasmid Maintainer",
+          "type": "P",
+          "color": "sage green",
+          "shape": "paired globular partition ATPase domains with long thin bridging coiled-coil",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "RSTD",
+          "name": "Restriction Defense",
+          "type": "P",
+          "color": "dusty rose",
+          "shape": "two opposing nuclease jaws linked to a small specificity lobe; no DNA drawn",
+          "row": 2,
+          "column": 1
+        },
+        {
+          "code": "SPOR",
+          "name": "Sporulase",
+          "type": "P",
+          "color": "pale ochre",
+          "shape": "curved oligomeric arc of folded spore-coat-like subunits with broad opening",
+          "row": 2,
+          "column": 2
+        },
+        {
+          "code": "CYCL",
+          "name": "Cyclin",
+          "type": "P",
+          "color": "gray lavender",
+          "shape": "open contractile ring segment of repeated globular division protein domains",
+          "row": 2,
+          "column": 3
+        }
+      ],
+      "file": "10_reproduction.png"
+    }
+  ]
+}

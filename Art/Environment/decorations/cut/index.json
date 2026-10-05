@@ -1,0 +1,389 @@
+{
+  "sprites": [
+    {
+      "file": "fragment_00.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_01.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_02.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_03.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_04.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_05.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_06.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_07.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_08.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_09.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_10.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_11.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_12.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_13.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "fragment_14.png",
+      "group": "fore",
+      "label": "Fragment"
+    },
+    {
+      "file": "tendril_00.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_01.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_02.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_03.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_04.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_05.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_06.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_07.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_08.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_09.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_10.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_11.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_12.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_13.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_14.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_15.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_16.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_17.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_18.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_19.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_20.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_21.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_22.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "tendril_23.png",
+      "group": "back",
+      "label": "Tendril"
+    },
+    {
+      "file": "rock_00.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_01.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_02.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_03.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_04.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_05.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_06.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_07.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_08.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_09.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_10.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_11.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_12.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_13.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_14.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_15.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_16.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "rock_17.png",
+      "group": "back",
+      "label": "Rock"
+    },
+    {
+      "file": "edge_00.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_01.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_02.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_03.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_04.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_05.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_06.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_07.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_08.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_09.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_10.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_11.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_12.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_13.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_14.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_15.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_16.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_17.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_18.png",
+      "group": "mid",
+      "label": "Edge"
+    },
+    {
+      "file": "edge_19.png",
+      "group": "mid",
+      "label": "Edge"
+    }
+  ]
+}

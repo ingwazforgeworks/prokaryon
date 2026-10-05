@@ -1,0 +1,125 @@
+Genes in the Prokaryon vault (92)
+Source: Obsidian_vault/Prokaryon/Genes and Gene Catalog.md
+Localization tags and promoters are not genes and are not listed.
+Format: TSV. Column 1 is the gene. Column 2 is what it does, and the real gene or system it stands in for.
+Section headings are labels, not rows.
+
+gene	description
+
+Metabolism (35)
+
+Uptake
+Glycon Permease (GLYP)	Imports dissolved Glycon for metabolism. Akin to sugar permeases such as the phosphotransferase system (PtsG) and ABC carbohydrate transporters.
+Lipron Permease (LIPP)	Imports dissolved Lipron for metabolism. Akin to fatty-acid transporters such as FadL.
+Nitrox Permease (NITP)	Imports Nitrox, used as both a fuel and the cell's nitrogen source. Akin to ammonium transporters such as AmtB.
+Sulfex Permease (SLFP)	Imports Sulfex, the dark-niche fuel and anoxic electron acceptor. Akin to sulfate transporters such as SulP and CysPUWA.
+Ferron Permease (FERP)	Imports dissolved Ferron for metabolism. Akin to ferrous-iron transporters such as FeoB.
+Carbex Permease (CBXP)	Concentrates dilute inorganic carbon inside the cell so it can be fixed. Akin to bicarbonate transporters and CO2-concentrating mechanisms (SbtA, BicA).
+Oxidex Permease (OXDP)	Speeds Oxidex into the cell and raises the ceiling on aerobic respiration. A stylised stand-in for oxygen entry; real oxygen mostly crosses membranes by diffusion.
+Fermentate Permease (FRMP)	Imports Fermentate, the acidic waste other cells excrete when respiring without an acceptor. Akin to organic-acid uptake such as lactate permeases (LldP).
+Siderin Permease (SIDP)	Brings loaded Siderin inside, recovering both the Ferron and the chelator. Akin to TonB-dependent siderophore receptors such as FepA and FhuA.
+
+Extracellular digestion
+Glycon Hydrolase (GLYH)	Digests insoluble carbohydrate outside the cell and releases dissolved Glycon. Akin to secreted glycoside hydrolases such as amylases and cellulases.
+Lipron Hydrolase (LIPH)	Digests biological debris outside the cell and releases Lipron. Akin to secreted lipases.
+Azoite Hydrolase (AZOH)	Releases Nitrox from compacted nitrogen-rich residue. Akin to extracellular proteases and deaminases.
+Thionite Lyase (THNL)	Dissolves sulfide mineral on contact and releases Sulfex. Akin to acid leaching by attached chemolithotrophs.
+Ferracite Reductase (FCTR)	Reduces mineral iron at the point of contact and frees Ferron against the membrane. Akin to dissimilatory metal-reducing cytochromes such as MtrC and OmcA.
+
+Energy conversion
+Fluxidase (FLUX)	Burns intracellular Glycon, Lipron, Nitrox, Sulfex, or Ferron into Fluxin. Akin to central catabolism, glycolysis and related pathways, collapsed into one enzyme.
+ATP Synthase (ATPS)	Converts Fluxin into ATP, and excretes Fermentate when no terminal acceptor is present. Akin to rotary ATP synthase (Atp operon).
+Oxidex Reductase (OXDR)	Passes spent electrons to Oxidex, multiplying ATP yield and suppressing Fermentate. Akin to aerobic terminal oxidases such as cytochrome bo and bd.
+Sulfex Reductase (SLFR)	Passes electrons to Sulfex in anoxic water, for a moderate ATP yield. Akin to dissimilatory sulfate reduction (Apr, Dsr).
+Reducin Dehydrogenase (RDCD)	Diverts Fluxin into Reducin, the reducing power biosynthesis needs. Akin to reverse electron transport and NAD(P)H generation.
+
+Phototrophy
+Rhodin Synthase (RHDS)	Builds Rhodin, the cheapest pigment and the cheapest light sensor. Akin to retinal biosynthesis for rhodopsin phototrophy.
+Photorhodin (PHOR)	Turns light into Fluxin at low yield, with no reducing power and no carbon fixation. Akin to proteorhodopsin and bacteriorhodopsin.
+Chlorin Synthase (CHLS)	Builds Chlorin, the nitrogen-hungry antenna required by the reaction centre. Akin to chlorophyll biosynthesis (chl genes).
+Reaction Center (RXNC)	Turns harvested light into both Fluxin and Reducin, the only route to full autotrophy. Akin to chlorophyll reaction centres and their electron-transfer chains.
+Carotin Synthase (CRTS)	Builds Carotin, an accessory antenna that also discards excess light energy. Akin to carotenoid biosynthesis (crt genes).
+Phycin Synthase (PHYS)	Builds Phycin, which harvests wavelengths other phototrophs leave behind. Akin to phycobilisome assembly and complementary chromatic adaptation.
+
+Light emission
+Red Fluorescent Protein (RFP)	Spends ATP to emit red light, independent of body colour. Akin to DsRed and its relatives, here as a glow rather than re-emitted light.
+Green Fluorescent Protein (GFP)	Spends ATP to emit green light. Akin to Aequorea GFP, with the colour converter and the emission collapsed into one gene.
+Yellow Fluorescent Protein (YFP)	Spends ATP to emit yellow light, which Rhodin can sense. Akin to yellow fluorescent protein, a spectral variant of GFP.
+Blue Fluorescent Protein (BFP)	Spends ATP to emit blue light, the costliest glow. Akin to blue fluorescent protein, a spectral variant of GFP.
+
+Biosynthesis and storage
+Glycon Synthase (GLYS)	Fixes Carbex with Reducin and ATP into Glycon, completing autotrophy. Akin to carbon fixation such as the Calvin cycle and RuBisCO.
+Nitrox Assimilase (NITA)	Turns Nitrox into nitrogen that Anabolase can build with. Akin to ammonium assimilation (GS-GOGAT, GdhA).
+Anabolase (ANAB)	Assembles Biomass from carbon, nitrogen, and ATP, and so gates growth and division. Akin to aggregate anabolism, many biosynthetic pathways collapsed into one module.
+Granulin Synthase (GRNS)	Polymerises surplus Glycon into insoluble Granulin granules, at a conversion loss. Akin to glycogen synthase (GlgA) and PHA synthases (PhaC).
+Granulin Hydrolase (GRNH)	Breaks stored Granulin back into usable Glycon. Akin to glycogen phosphorylase (GlgP) and PHA depolymerases.
+Siderin Synthase (SIDS)	Secretes Siderin, a chelator that frees Ferron from mineral iron at a distance. Akin to siderophore biosynthesis such as enterobactin and pyoverdine.
+
+Homeostasis (13)
+Protopump (PPMP)	Pumps acid out to hold internal pH, and acidifies the neighbourhood while doing it. Akin to proton-translocating ATPases and acid-resistance systems.
+Acid Tolerase (ACDT)	Widens the pH range the cell can grow in, at a cost to growth everywhere. Akin to acid-adapted enzymes and membrane variants.
+Osmolyn Synthase (OSMS)	Builds Osmolyn so internal water potential matches the outside salinity. Akin to compatible-solute synthesis (proline, trehalose, ectoine).
+Aquaporin (AQUP)	Opens a fast route for water in or out, with little buffering. Akin to aquaporins (AqpZ) and mechanosensitive release (MscL, MscS).
+Heat Shock Protein (HSP)	Holds proteins in shape as temperature rises and refolds those that have come apart. Akin to GroEL and DnaK chaperone systems.
+Cold Shock Protein (CSP)	Keeps synthesis going in the cold, buying throughput rather than survival. Akin to cold-shock RNA chaperones such as CspA.
+Membrane Saturase (MSAT)	Saturates membrane lipids and shifts the temperature optimum warmer, slowing all transport. Akin to lipid saturation in homeoviscous adaptation.
+Membrane Desaturase (MDES)	Desaturates membrane lipids and shifts the temperature optimum colder, at the cost of a leakier envelope. Akin to lipid desaturases (Des).
+Oxidex Detoxase (OXDT)	Neutralises reactive byproducts of Oxidex so oxygen-rich water is survivable. Akin to catalase (Kat) and superoxide dismutase (Sod).
+Photoprotectin (PHPR)	Dumps excess captured light so it does less photodamage. Akin to non-photochemical quenching and carotenoid photoprotection.
+Repairase (REPR)	Clears accumulated damage of any origin, competing with growth for ATP. Akin to protein turnover (Lon, Clp) and DNA repair, collapsed into one module.
+Lysin Resistase (LYSR)	Binds and neutralises diffusible Lysin before it damages the envelope. Akin to bacteriocin immunity proteins.
+Envelope Defensin (DEFN)	Blocks effectors delivered by contact, and nothing else. Akin to immunity proteins and surface modifications that interfere with contact-dependent delivery.
+
+Morphology (16)
+Envelope Thickener (ENVT)	Thickens the envelope against toxins and predation, and slows all uptake. Akin to cell-wall thickening and envelope remodelling.
+Capsulin Synthase (CAPS)	Secretes a Capsulin capsule at a heavy carbon cost. Akin to polysaccharide capsules and the glycocalyx (cps, kps).
+Shape Determinant (SHPD)	Sets the body plan to sphere, rod, or filament. Akin to cytoskeletal shape systems such as MreB-dependent elongation.
+Crescentin (CRST)	Bends an existing long axis into a crescent. Akin to Caulobacter crescentin (CreS).
+Elongin (ELGN)	Raises the length-to-width ratio, stretching the same volume into a longer cell. Akin to long-axis elongation of the sacculus (MreB, RodA).
+Girthin (GRTN)	Lowers the length-to-width ratio, making the same volume shorter and wider. Akin to width control of the sacculus.
+Size Regulator (SIZR)	Sets the biomass threshold at which the cell divides. Akin to division size control and the surface-to-volume constraint.
+Buoyin (BUOY)	Builds gas vesicles that lower density, so the cell drifts upward with no motor and no steering. Akin to cyanobacterial gas vesicles (gvp) and buoyancy regulation.
+Floatin (FLOA)	Raises the gas-filled fraction of cell volume, using the same vesicles as Buoyin. Akin to cyanobacterial gas-vesicle proteins GvpA and GvpC.
+Ballastin (BALA)	Packages reserves into dense granules that sink the cell. Akin to cyanobacterial carbohydrate ballast, where glycogen granules raise cell density.
+Adhesin (ADHN)	Sticks the cell to debris, minerals, and terrain, and not to other cells. Akin to surface adhesins such as FimH.
+Cohesin (COHS)	Sticks the cell to other cells of the same type, and ignores debris, minerals, terrain, and every other type. Akin to homophilic autoaggregation proteins such as Ag43. The name is the game's; real cohesin is not this.
+Matrixin Synthase (MTXS)	Secretes Matrixin that stays put and builds a biofilm. Akin to extracellular polymeric substances (Psl, Pel, cellulose, alginate).
+Lysin Synthase (LYSS)	Secretes diffusible Lysin that damages every susceptible envelope in range, including kin. Akin to bacteriocins and other secreted antimicrobials.
+Effector Injector (EFFI)	Delivers an attack only while contact is held. Akin to injectisome-style contact-dependent protein delivery (type III and type VI secretion, Cdi).
+Bdellase (BDEL)	Attaches to another cell and digests it. A stylised stand-in for predatory bacteria such as Bdellovibrio.
+
+Motility (9)
+Flagellin (FLGN)	Builds and exports the filament subunits of a flagellum. Akin to flagellin (FliC).
+Flagellar Motor Protein (FLGM)	Spins that filament by spending Fluxin, so swimming is a continuous cost. Akin to the flagellar stator (MotA, MotB).
+Taxis Regulator (TAXR)	Compares a receptor reading with the recent past and biases turning: keep going when conditions improve, tumble when they worsen. Akin to the CheA/CheY chemotaxis phosphorelay.
+Pilin (PILN)	Builds retractable filaments that grip a surface and pull the cell along it. Akin to type IV pili and twitching motility (PilA, PilT).
+Cilium Assemblase (CILA)	Builds and maintains cilia, with coverage appearing gradually. Akin to intraflagellar transport and ciliary assembly, collapsed into one module.
+Ciliary Motor (CILM)	Spends ATP to set ciliary beat strength and rate. Akin to axonemal dynein.
+Ciliary Polarizer (CILP)	Sets the resting direction of the ciliary power stroke, so a patch can thrust, rotate, or pump locally. Akin to basal-body and rootlet orientation of the stroke.
+Ciliary Reversal Channel (CILR)	Lets calcium into the cilium when an excitatory signal arrives, reversing the power stroke. Akin to the voltage-gated calcium channels of the ciliate avoiding reaction.
+Ciliary Calcium Pump (CILC)	Clears that calcium, so stronger expression means a shorter reversal. Akin to the calcium pumps that restore resting calcium in a cilium.
+
+Perception (9)
+Chemoreceptor (CHMR)	Reports the level of one tagged solute by comparing now with the recent past. Akin to methyl-accepting chemotaxis proteins (Tar, Tsr).
+Photochrome (PCHR)	Reports brightness in one spectral band, and needs a pigment bound before it can see. Akin to sensory rhodopsins and phytochromes.
+Photovector (PHVC)	Focuses light through the cell body so the cell can tell which direction it comes from. Akin to cyanobacterial micro-optic light-direction sensing.
+Thermoreceptor (THMR)	Reports local temperature from a protein whose folding shifts with heat. Akin to thermosensing through protein and RNA conformation (DesK, RNA thermometers).
+Osmoreceptor (OSMR)	Reports envelope strain from water moving in or out. Akin to mechanosensitive channels and turgor sensing.
+Protoreceptor (PRTR)	Reports internal pH. Akin to cytoplasmic acid-responsive regulators such as CadC.
+Redoxin (RDXN)	Reports whether Oxidex, Sulfex, or neither is available, from the redox state of the cell's own carriers. Akin to ArcA/ArcB-style redox regulators.
+Quoron Receptor (QURR)	Reports Quoron concentration as a proxy for how crowded the neighbourhood is. Akin to quorum-sensing receptors such as LuxR.
+Damage Receptor (DMGR)	Reports internal damage and stress, and is the only route to UV awareness. Akin to heat-shock and general stress regulons (RpoH, RpoS).
+
+Regulation (4)
+Repressor (REPX)	Binds promoters with a matching operator tag and suppresses them in proportion to its abundance. Akin to transcriptional repressors such as LacI and TetR.
+Activator (ACTX)	Binds promoters with a matching operator tag and boosts their output. Akin to transcriptional activators such as CRP and AraC.
+Memory Latch (MEML)	A pair of mutual repressors that stays in whichever state a cue last pushed it into. Akin to bistable genetic toggles such as lambda CI/Cro.
+Quoron Synthase (QURS)	Emits Quoron, whose local concentration reports how many emitters are nearby. Akin to autoinducer synthases such as LuxI.
+
+Reproduction (6)
+Conjugation Apparatus (CONJ)	Transfers DNA to another cell while the two stay in contact. Akin to conjugative type IV secretion (Tra, VirB).
+Competence Uptake (COMP)	Takes up free DNA (Ectodin) from the water, with no control over whose it was. Akin to natural competence and DNA-uptake systems (ComEA, ComEC).
+Plasmid Maintainer (PLSM)	Replicates acquired cassettes as separate elements so they are kept. Akin to plasmid replication and partitioning (Rep, Par).
+Restriction Defense (RSTD)	Destroys incoming DNA, gifts included. Akin to restriction-modification systems.
+Sporulase (SPOR)	Enters a dormant, stress-resistant state with no growth until it wakes. Akin to sporulation and other dormancy programs (Spo0A and the endospore cascade).
+Cyclin (CYCL)	Pushes division while it is expressed, so daughters are born smaller than the size threshold would allow. Akin to cyclins, which advance the cell cycle when present.

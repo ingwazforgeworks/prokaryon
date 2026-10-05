@@ -1,0 +1,9 @@
+{
+  "id": "temperature",
+  "title": "Temperature",
+  "category": "Environment",
+  "body": [
+    "Placeholder. Temperature is an environmental field. Cells tolerate a band of it and suffer outside that band.",
+    "The full entry will be drawn from the design wiki."
+  ]
+}
