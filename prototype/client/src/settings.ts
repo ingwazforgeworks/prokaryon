@@ -37,9 +37,9 @@ export function monitorUiScale(): number {
   const viewW = document.documentElement?.clientWidth || window.innerWidth || UI_REFERENCE_WIDTH;
   const viewH = document.documentElement?.clientHeight || window.innerHeight || UI_REFERENCE_HEIGHT;
   const screen = window.screen;
-  const halfW = (screen?.width || viewW) / 2;
-  const halfH = (screen?.height || viewH) / 2;
-  return clampScale(Math.min(viewW / halfW, viewH / halfH), 1);
+  const monitorW = Math.max(screen?.width || 0, viewW);
+  const monitorH = Math.max(screen?.height || 0, viewH);
+  return clampScale(Math.min(viewW / (monitorW / 2), viewH / (monitorH / 2)), 1);
 }
 
 export function setGameSettings(patch: Partial<GameSettings>): void {
