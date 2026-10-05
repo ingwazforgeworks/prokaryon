@@ -1057,6 +1057,7 @@ function piliCeiling(): number {
 }
 
 function syncPiliLimit(): void {
+  if (!piliSlider || !piliReadout) return;
   const ceiling = piliCeiling();
   piliSlider.max = String(ceiling);
   piliCount = clamp(piliCount, 0, ceiling);
@@ -1179,6 +1180,7 @@ const applyMembrane = (broadcast = true): void => {
 };
 
 function showMembraneStyle(style: number): void {
+  if (!membraneColorInput) return;
   const current = (membraneColorInput.value || MEMBRANE_COLOR_BLACK).toLowerCase();
   const inherited = current === styleDefaultHex(membraneStyle);
   membraneStyle = style;

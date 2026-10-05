@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "npm install --prefix prototype/client",
+  "buildCommand": "npm run build --prefix prototype/client",
+  "outputDirectory": "prototype/client/dist",
+  "rewrites": [
+    { "source": "/music", "destination": "/music/index.json" },
+    { "source": "/music/", "destination": "/music/index.json" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

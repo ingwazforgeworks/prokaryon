@@ -1193,7 +1193,7 @@ export class Terrain {
     }
     tx *= this.slideKeep;
     ty *= this.slideKeep;
-    return this.slideClear(x, y, tx, ty, normal, blocked, sensed);
+    return this.slideClear(x, y, tx, ty, normal, blocked, sensed !== null);
   }
 
   /** Normal where the attempted move meets terrain, when the start pose is still clear. */
