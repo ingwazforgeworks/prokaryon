@@ -61,6 +61,12 @@ export const GENES: GeneRecord[] = [
     "description": "Reduces mineral iron in place at the point of contact, freeing Ferron directly against the cell's own membrane. The slow, anchored, defensible route to mineral iron."
   },
   {
+    "id": "FERR",
+    "name": "Ferron Reductase",
+    "category": "Metabolism",
+    "description": "A terminal respiratory module for iron-bearing anoxic water. Passes electrons to dissolved Ferron instead of Oxidex, giving a moderate ATP yield in places the better acceptor never reaches. Unlike Ferracite Reductase (FCTR), it never needs to touch the solid mineral."
+  },
+  {
     "id": "FERP",
     "name": "Ferron Permease",
     "category": "Metabolism",
@@ -68,7 +74,7 @@ export const GENES: GeneRecord[] = [
   },
   {
     "id": "FLUX",
-    "name": "Fluxidase",
+    "name": "Fluxin Synthase",
     "category": "Metabolism",
     "description": "Extracts energy from intracellular Glycon, Lipron, Nitrox, Sulfex, or Ferron, converting these fuels into Fluxin for ATP production with ATP Synthase (ATPS)"
   },

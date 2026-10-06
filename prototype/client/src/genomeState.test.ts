@@ -8,6 +8,8 @@ import {
   clearDraft,
   clearPart,
   draftProblems,
+  geneAcceptsRoute,
+  geneAcceptsSite,
   getDraft,
   getGenome,
   getInsertionIndex,
@@ -28,6 +30,7 @@ import {
   regulatoryIcon,
   CYTOSOLIC_ICON,
   type Cassette,
+  type Draft,
 } from "./genomeState";
 import { resetUnlocks, unlockGene, unlockPart, unlockedGeneIds } from "./geneUnlocks";
 import { mutationPointCount, setMutationPoints, STARTING_MUTATION_POINTS } from "./resources";
@@ -85,6 +88,93 @@ check(!slotAccepts("amount", "AZOH"), "a gene is not an amount part");
 check(amountRange("OSCL") && amountRange("GRAD"), "oscillatory and graded promoters split the amount node");
 check(!amountRange("CNST") && !amountRange("COND") && !amountRange("PERS") && !amountRange("THRS"), "other promoters keep a single amount node");
 check(!slotAccepts("amount-min", "CNST") && !slotAccepts("amount-max", "AZOH"), "the split amount slots reject non-amount parts");
+
+// Ferron Permease restrictions: transmembrane destination only, no position tag.
+check(geneAcceptsRoute(null, "CYTO") && geneAcceptsRoute("FLGN", "SecretoryPeptide") && !geneAcceptsRoute("FLGN", "TransmembraneSignal"), "flagellin still only takes the secreted route");
+check(geneAcceptsRoute("SLFP", "TransmembraneSignal") && !geneAcceptsRoute("SLFP", "SecretoryPeptide"), "the sulfex permease only takes the transmembrane route");
+check(geneAcceptsRoute("FERR", "CYTO") && !geneAcceptsRoute("FERR", "TransmembraneSignal") && !geneAcceptsRoute("FERR", "SecretoryPeptide"), "the ferron reductase only takes the cytosol destination");
+check(geneAcceptsRoute("SLFR", "CYTO") && !geneAcceptsRoute("SLFR", "TransmembraneSignal") && !geneAcceptsRoute("SLFR", "SecretoryPeptide"), "the sulfex reductase only takes the cytosol destination");
+check(!geneAcceptsSite("FERR") && !geneAcceptsSite("SLFR"), "the reductases refuse position tags");
+check(geneAcceptsSite(null) && geneAcceptsSite("FLGN") && !geneAcceptsSite("FERP") && !geneAcceptsSite("SLFP"), "only the permeases refuse position tags");
+check(placePart("coding", "FERP"), "the permease places as a coding region");
+check(placePart("route", "TransmembraneSignal"), "the permease takes the transmembrane destination");
+check(!placePart("route", "SecretoryPeptide") && !placePart("route", "CYTO"), "the permease rejects the other destinations");
+check(!placePart("site", "PolarLocalizationSignal"), "the permease rejects every position tag");
+const permeaseDraft: Draft = { name: "Probe", code: "PRB1", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "FERP", routeId: "SecretoryPeptide", siteId: "PolarLocalizationSignal" };
+check(draftProblems(permeaseDraft).some((problem) => problem.includes("only takes the Transmembrane")), "a misrouted permease draft names the accepted destination");
+check(draftProblems(permeaseDraft).some((problem) => problem.includes("cannot take a position tag")), "a position tag on the permease draft is flagged");
+clearPart("coding");
+clearPart("route");
+
+// Sulfex Permease mirrors the Ferron Permease restrictions.
+check(placePart("coding", "SLFP"), "the sulfex permease places as a coding region");
+check(placePart("route", "TransmembraneSignal"), "the sulfex permease takes the transmembrane destination");
+check(!placePart("route", "SecretoryPeptide") && !placePart("route", "CYTO"), "the sulfex permease rejects the other destinations");
+check(!placePart("site", "PolarLocalizationSignal"), "the sulfex permease rejects every position tag");
+const sulfexDraft: Draft = { name: "Probe", code: "PRB2", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "SLFP", routeId: "SecretoryPeptide", siteId: "PolarLocalizationSignal" };
+check(draftProblems(sulfexDraft).some((problem) => problem.includes("only takes the Transmembrane")), "a misrouted sulfex permease draft names the accepted destination");
+check(draftProblems(sulfexDraft).some((problem) => problem.includes("cannot take a position tag")), "a position tag on the sulfex permease draft is flagged");
+clearPart("coding");
+clearPart("route");
+
+// Reductases are cytosolic: cytosol destination only, no position tag.
+check(placePart("coding", "FERR"), "the ferron reductase places as a coding region");
+check(placePart("route", "CYTO"), "the ferron reductase takes the cytosol destination");
+check(!placePart("route", "TransmembraneSignal") && !placePart("route", "SecretoryPeptide"), "the ferron reductase rejects the membrane and secreted destinations");
+check(!placePart("site", "PolarLocalizationSignal"), "the ferron reductase rejects every position tag");
+clearPart("coding");
+clearPart("route");
+check(placePart("coding", "SLFR"), "the sulfex reductase places as a coding region");
+check(placePart("route", "CYTO"), "the sulfex reductase takes the cytosol destination");
+check(!placePart("route", "TransmembraneSignal") && !placePart("route", "SecretoryPeptide"), "the sulfex reductase rejects the membrane and secreted destinations");
+check(!placePart("site", "PolarLocalizationSignal"), "the sulfex reductase rejects every position tag");
+const reductaseDraft: Draft = { name: "Probe", code: "PRB3", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "FERR", routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" };
+check(draftProblems(reductaseDraft).some((problem) => problem.includes("only takes the Cytosolic")), "a misrouted reductase draft names the accepted destination");
+check(draftProblems(reductaseDraft).some((problem) => problem.includes("cannot take a position tag")), "a position tag on the reductase draft is flagged");
+clearPart("coding");
+clearPart("route");
+
+// Lubricin is a secreted coat: secreted destination only, no position tag.
+check(geneAcceptsRoute("LUBR", "SecretoryPeptide") && !geneAcceptsRoute("LUBR", "CYTO") && !geneAcceptsRoute("LUBR", "TransmembraneSignal") && !geneAcceptsRoute("LUBR", "SURF"), "lubricin only takes the secreted route");
+check(!geneAcceptsSite("LUBR"), "lubricin refuses position tags");
+check(placePart("coding", "LUBR"), "lubricin places as a coding region");
+check(placePart("route", "SecretoryPeptide"), "lubricin takes the secreted destination");
+check(!placePart("route", "CYTO") && !placePart("route", "TransmembraneSignal") && !placePart("route", "SURF"), "lubricin rejects the other destinations");
+check(!placePart("site", "PolarLocalizationSignal"), "lubricin rejects every position tag");
+const lubricinDraft: Draft = { name: "Probe", code: "PRB4", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "LUBR", routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" };
+check(draftProblems(lubricinDraft).some((problem) => problem.includes("only takes the Secreted")), "a misrouted lubricin draft names the accepted destination");
+check(draftProblems(lubricinDraft).some((problem) => problem.includes("cannot take a position tag")), "a position tag on the lubricin draft is flagged");
+clearPart("coding");
+clearPart("route");
+
+// Cilin is a whole-cell coat: secreted destination only, no position tag.
+check(geneAcceptsRoute("CILN", "SecretoryPeptide") && !geneAcceptsRoute("CILN", "CYTO") && !geneAcceptsRoute("CILN", "TransmembraneSignal"), "cilin only takes the secreted route");
+check(!geneAcceptsSite("CILN"), "cilin refuses position tags");
+check(placePart("coding", "CILN"), "cilin places as a coding region");
+check(placePart("route", "SecretoryPeptide"), "cilin takes the secreted destination");
+check(!placePart("route", "CYTO") && !placePart("route", "TransmembraneSignal"), "cilin rejects the other destinations");
+check(!placePart("site", "PolarLocalizationSignal"), "cilin rejects every position tag");
+const cilinDraft: Draft = { name: "Probe", code: "PRB5", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "CILN", routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" };
+check(draftProblems(cilinDraft).some((problem) => problem.includes("only takes the Secreted")), "a misrouted cilin draft names the accepted destination");
+check(draftProblems(cilinDraft).some((problem) => problem.includes("cannot take a position tag")), "a position tag on the cilin draft is flagged");
+clearPart("coding");
+clearPart("route");
+
+// The ciliary motor protein sits in the membrane and takes any position tag.
+check(geneAcceptsRoute("CILM", "TransmembraneSignal") && !geneAcceptsRoute("CILM", "SecretoryPeptide") && !geneAcceptsRoute("CILM", "CYTO"), "the ciliary motor protein only takes the transmembrane route");
+check(geneAcceptsSite("CILM"), "the ciliary motor protein accepts position tags");
+check(placePart("coding", "CILM"), "the ciliary motor protein places as a coding region");
+check(placePart("route", "TransmembraneSignal"), "the ciliary motor protein takes the transmembrane destination");
+check(!placePart("route", "SecretoryPeptide") && !placePart("route", "CYTO"), "the ciliary motor protein rejects the other destinations");
+check(placePart("site", "PolarLocalizationSignal"), "the ciliary motor protein takes a polar position tag");
+clearPart("site");
+check(placePart("site", "LATR"), "the ciliary motor protein takes a lateral position tag");
+clearPart("site");
+const motorDraft: Draft = { name: "Probe", code: "PRB6", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "CILM", routeId: "SecretoryPeptide", siteId: null };
+check(draftProblems(motorDraft).some((problem) => problem.includes("only takes the Transmembrane")), "a misrouted ciliary motor draft names the accepted destination");
+check(draftProblems(motorDraft).every((problem) => !problem.includes("cannot take a position tag")), "the ciliary motor draft is free to carry position tags");
+clearPart("coding");
+clearPart("route");
 
 const amountBefore = JSON.stringify(getDraft());
 check(placePart("amount", "CNST") === false && JSON.stringify(getDraft()) === amountBefore, "a non-amount drop leaves the amount slot empty");
@@ -218,7 +308,7 @@ check(
 check(unlockGene("FLGN"), "a mutation point unlocks a gene");
 check(mutationPointCount() === STARTING_MUTATION_POINTS - 1, "unlocking spends a mutation point");
 resetUnlocks();
-check(unlockedGeneIds().length === 0, "a new cell starts with no unlocked genes");
+check(unlockedGeneIds().length === 0, "a new cell starts with no purchased gene unlocks (defaults are not purchases)");
 resetGenomeState();
 check(getGenome().length === 0 && getDraft().geneId === null, "a new cell starts with an empty genome and draft");
 

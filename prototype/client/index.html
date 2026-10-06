@@ -3161,8 +3161,14 @@
         transition: opacity 1000ms ease;
       }
       .splash img {
-        width: calc(100vw / var(--ui-scale));
-        height: calc(100vh / var(--ui-scale));
+        /* Never stretch the logo past its 1024x565 source: render at native
+           resolution, and only compress (scale down) when the viewport cannot
+           hold it. The caps divide by the UI scale because the root is
+           transform-scaled, so the art cannot be upscaled through it either. */
+        width: auto;
+        height: auto;
+        max-width: calc(min(100vw, 1024px) / var(--ui-scale));
+        max-height: calc(min(100vh, 565px) / var(--ui-scale));
         object-fit: contain;
         pointer-events: none;
         opacity: 0;
@@ -3926,7 +3932,7 @@
     <canvas id="view"></canvas>
     <div id="ui">
     <div id="hud">
-      <p id="position">X +0.00  Y -450.00; 6M; 1.00×</p>
+      <p id="position" hidden>X +0.00  Y -450.00; 6M; 1.00×</p>
       <aside id="debug" hidden>
       <h2>Debug</h2>
       <div class="debug-row">
@@ -4357,7 +4363,6 @@
           <button type="button" class="tech-mode" data-category="Perception" role="tab" aria-selected="false">Perception</button>
           <button type="button" class="tech-mode" data-category="Metabolism" role="tab" aria-selected="false">Metabolism</button>
           <button type="button" class="tech-mode" data-category="Homeostasis" role="tab" aria-selected="false">Homeostasis</button>
-          <button type="button" class="tech-mode" data-category="Regulation" role="tab" aria-selected="false">Regulation</button>
           <button type="button" class="tech-mode" data-category="Reproduction" role="tab" aria-selected="false">Reproduction</button>
         </div>
         <div class="tech-category-group" id="tech-categories-regulatory" hidden>

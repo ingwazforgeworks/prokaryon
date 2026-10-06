@@ -3,7 +3,8 @@
   "functional": {
     "groups": [
       { "key": "tree:Motility", "label": "Motility", "accent": "#3ec4c0", "x": 28, "y": 28, "w": 316, "h": 206 },
-      { "key": "tree:Morphology", "label": "Morphology", "accent": "#8fb4d4", "x": 380, "y": 28, "w": 88, "h": 406 }
+      { "key": "tree:Morphology", "label": "Morphology", "accent": "#8fb4d4", "x": 380, "y": 28, "w": 88, "h": 406 },
+      { "key": "tree:Metabolism", "label": "Metabolism", "accent": "#6fbf7a", "x": 28, "y": 268, "w": 316, "h": 206 }
     ],
     "nodes": [
       {
@@ -125,6 +126,78 @@
         "groupKey": "tree:Morphology",
         "category": "Morphology",
         "description": "Surface proteins that make the cell stick to other cells of the same type. The clump holds in open water, and the protein ignores debris, minerals, terrain, and every other type of cell."
+      },
+      {
+        "id": "ATPS",
+        "geneId": "ATPS",
+        "name": "ATPS",
+        "x": 44,
+        "y": 296,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Metabolism",
+        "category": "Metabolism",
+        "description": "Converts Fluxin into ATP, supplying the energy needed to maintain the cell, express genes, grow, and perform other cellular functions."
+      },
+      {
+        "id": "FLUX",
+        "geneId": "FLUX",
+        "name": "FLUX",
+        "x": 120,
+        "y": 296,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Metabolism",
+        "category": "Metabolism",
+        "description": "Extracts energy from intracellular Glycon, Lipron, Nitrox, Sulfex, or Ferron, converting these fuels into Fluxin for ATP production with ATP Synthase (ATPS)"
+      },
+      {
+        "id": "FERP",
+        "geneId": "FERP",
+        "name": "FERP",
+        "x": 196,
+        "y": 296,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Metabolism",
+        "category": "Metabolism",
+        "description": "Transports Ferron into the cell for metabolism."
+      },
+      {
+        "id": "SLFP",
+        "geneId": "SLFP",
+        "name": "SLFP",
+        "x": 44,
+        "y": 396,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Metabolism",
+        "category": "Metabolism",
+        "description": "Transports Sulfex into the cell."
+      },
+      {
+        "id": "FERR",
+        "geneId": "FERR",
+        "name": "FERR",
+        "x": 120,
+        "y": 396,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Metabolism",
+        "category": "Metabolism",
+        "description": "A terminal respiratory module for iron-bearing anoxic water. Passes electrons to dissolved Ferron instead of Oxidex, giving a moderate ATP yield in places the better acceptor never reaches. Unlike Ferracite Reductase (FCTR), it never needs to touch the solid mineral."
+      },
+      {
+        "id": "SLFR",
+        "geneId": "SLFR",
+        "name": "SLFR",
+        "x": 196,
+        "y": 396,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Metabolism",
+        "category": "Metabolism",
+        "description": "A terminal respiratory module for anoxic water. Passes electrons to Sulfex instead of Oxidex, giving a moderate ATP yield in places the better acceptor never reaches."
       }
     ],
     "labels": [],

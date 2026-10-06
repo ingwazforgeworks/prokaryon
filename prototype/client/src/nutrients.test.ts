@@ -136,7 +136,20 @@ check(Math.abs(field.take("sulfex", spot.x, spot.y, 10) - dipped) < 1e-5, "a cel
 const rested = field.read("sulfex", spot.x, spot.y);
 check(rested > 0.02 && rested < spot.value * 0.7, "draining the plume leaves the uncolored tail");
 for (let step = 0; step < 40; step += 1) field.advance(0.1);
-check(field.read("sulfex", spot.x, spot.y) > rested + 0.15, "the deposit leaches concentration back into that cell");
+const soon = field.read("sulfex", spot.x, spot.y);
+check(soon < rested + 0.05, "a drawn-down cell refills slowly at first");
+for (let step = 0; step < 560; step += 1) field.advance(0.1);
+check(field.read("sulfex", spot.x, spot.y) > rested + 0.1, "the deposit gradually leaches concentration back into that cell");
+
+// The drawdown memory is per nutrient: draining one channel does not slow another.
+const memory = new NutrientConcentrations();
+memory.sources(1, [up]);
+const drainedHere = memory.read("sulfex", spot.x, spot.y);
+memory.take("sulfex", spot.x, spot.y, drainedHere);
+memory.add("nitrox", spot.x, spot.y, 0.8);
+for (let step = 0; step < 40; step += 1) memory.advance(0.1);
+check(memory.read("nitrox", spot.x, spot.y) < 0.45, "an untouched channel still fades at full speed beside a drawn-down one");
+check(memory.read("sulfex", spot.x, spot.y) < drainedHere - 0.15, "the drawn-down channel stays well short of its supply");
 
 const poured = field.add("nitrox", 40, 200, 0.8);
 const pouredAt = field.read("nitrox", 40, 200);

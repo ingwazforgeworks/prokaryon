@@ -1,4 +1,4 @@
-import { buoyancyVelocity } from "./buoyancy";
+import { buoyancyExpressionLevel, buoyancyVelocity, genomeCanDriveBuoyancy } from "./buoyancy";
 import { bootFinish, bootMark } from "./boot";
 import { initCodex } from "./codex";
 import { initDock, onEnvironmentVisible } from "./dock";
@@ -19,11 +19,23 @@ import {
   type FlagellinBySite,
 } from "./flagellinDistribution";
 import { loadUnlocks } from "./geneUnlocks";
+import { capsuleGap, capsulesOverlap, type Capsule } from "./cellCollision";
+import { permeaseExpressionLevel, stepPermeaseUptake } from "./permeaseUptake";
+import { reductaseExpressionLevel, stepReductase } from "./reductase";
+import {
+  CILIATION_MAX,
+  cilinFromConstructs,
+  ciliumMotorDrive,
+  ciliumMotorFromConstructs,
+  genomeCanDriveCilia,
+  type CiliumMotorDrive,
+} from "./ciliaDistribution";
+import { genomeCanDriveLubricin, lubricinExpressionLevel } from "./lubricin";
 import { loadCellState, saveCellState } from "./debugCellState";
 import { initTechTree } from "./techTree";
 import { initPlayer } from "./player";
 import { initResourceBar } from "./resourceBar";
-import { mutationPointCount, onResources, setMutationPoints, setPopulation } from "./resources";
+import { cellResources, mutationPointCount, onResources, setMutationPoints, setPopulation, updateResource } from "./resources";
 import { initTitleScreen, titleScreenOpen } from "./menu";
 import { initSettings } from "./settingsPanel";
 import { bindButtonSounds, playCue } from "./uiSound";
@@ -51,7 +63,6 @@ const PIXELS_PER_UNIT = 32;
 
 const SIZE_MIN = 0.5;
 const SIZE_MAX = 3;
-const CILIATION_MAX = 48;
 const PILI_MAX = 32;
 const DIVISION_MIN_SCALE = SIZE_MIN * 2;
 const DIVISION_SECONDS = 2.5;
@@ -156,6 +167,8 @@ type CellDrive = {
   ciliaOrder: number;
   ciliaSwitch: CiliaSwitch;
   ciliaReverse: boolean;
+  /** Net ciliary push from expressed motor protein. Null leaves the switch in charge. */
+  ciliaMotor: CiliumMotorDrive | null;
   piliCount: number;
   piliLength: number;
   piliVariance: number;
@@ -1318,6 +1331,48 @@ const applyGenomeExpression = (timeSeconds: number, dtSeconds: number): void => 
   );
   genomeBeatWhipping = undulation > 0.02;
 };
+// Genome respiration: a transmembrane Ferron Permease (FERP) or Sulfex
+// Permease (SLFP) imports dissolved fuel, and the matching transmembrane
+// reductase (FERR or SLFR) burns the intracellular pool for a modest ATP
+// yield. Import tracks the permease expression level, the local
+// concentration, and the room left in the pool; the burn tracks the reductase
+// expression level and stops at an empty fuel pool or a full ATP pool, so
+// fuel is never wasted. The fuel readout reports the net rate and the ATP
+// readout the combined production of both reductases.
+const FUEL_GENES = [
+  { permeaseGeneId: "FERP", reductaseGeneId: "FERR", resourceId: "ferron", kind: "ferron" },
+  { permeaseGeneId: "SLFP", reductaseGeneId: "SLFR", resourceId: "sulfex", kind: "sulfex" },
+] as const;
+const applyGenomeRespiration = (timeSeconds: number, x: number, y: number, dt: number): void => {
+  const atp = cellResources().find((resource) => resource.id === "atp");
+  if (!atp) return;
+  const constructs = getGenome();
+  let atpAmount = atp.amount;
+  let atpRate = 0;
+  for (const fuel of FUEL_GENES) {
+    const held = cellResources().find((resource) => resource.id === fuel.resourceId);
+    if (!held) continue;
+    const imported = stepPermeaseUptake(
+      held.amount,
+      held.capacity,
+      permeaseExpressionLevel(constructs, fuel.permeaseGeneId, timeSeconds),
+      renderer.nutrientRead(fuel.kind, x, y),
+      dt,
+    );
+    const burned = stepReductase(
+      imported.amount,
+      atpAmount,
+      atp.capacity,
+      reductaseExpressionLevel(constructs, fuel.reductaseGeneId, timeSeconds),
+      dt,
+    );
+    updateResource(fuel.resourceId, { amount: burned.fuel, rate: imported.rate - burned.fuelRate });
+    atpAmount = burned.atp;
+    atpRate += burned.atpRate;
+    if (imported.depletion > 0) renderer.nutrientTake(fuel.kind, x, y, imported.depletion);
+  }
+  updateResource("atp", { amount: atpAmount, rate: atpRate });
+};
 let genomeDrivesFlagellinState = false;
 const syncGenomeFlagellin = (): void => {
   const constructs = getGenome();
@@ -1355,6 +1410,132 @@ const syncGenomeFlagellin = (): void => {
 };
 subscribeGenome(syncGenomeFlagellin);
 syncGenomeFlagellin();
+
+// Genome buoyancy: expressed Buoyin and Ballastin replace the debug sliders,
+// which are zeroed and disabled while the genome is driving vertical drift.
+let genomeDrivesBuoyancyState = false;
+const applyGenomeBuoyancy = (timeSeconds: number): void => {
+  const constructs = getGenome();
+  buoyin = buoyancyExpressionLevel(constructs, "BUOY", timeSeconds);
+  ballastin = buoyancyExpressionLevel(constructs, "BALA", timeSeconds);
+};
+const syncGenomeBuoyancy = (): void => {
+  // Potential-based check: an oscillatory construct resting at its trough must
+  // not hand buoyancy back to the sandbox sliders for a moment.
+  if (genomeCanDriveBuoyancy(getGenome())) {
+    genomeDrivesBuoyancyState = true;
+    applyGenomeBuoyancy(performance.now() / 1000);
+    for (const [slider, readout] of [
+      [buoyinSlider, buoyinReadout],
+      [ballastinSlider, ballastinReadout],
+    ] as [HTMLInputElement, HTMLElement][]) {
+      slider.value = "0";
+      slider.disabled = true;
+      slider.title = "Driven by expressed buoyancy protein in the genome";
+      readout.textContent = "0.00";
+    }
+    return;
+  }
+  genomeDrivesBuoyancyState = false;
+  buoyinSlider.disabled = false;
+  buoyinSlider.title = "";
+  ballastinSlider.disabled = false;
+  ballastinSlider.title = "";
+  buoyin = clamp(Number(buoyinSlider.value), 0, 1);
+  ballastin = clamp(Number(ballastinSlider.value), 0, 1);
+  buoyinReadout.textContent = buoyin.toFixed(2);
+  ballastinReadout.textContent = ballastin.toFixed(2);
+};
+subscribeGenome(syncGenomeBuoyancy);
+syncGenomeBuoyancy();
+
+// Genome cilia: expressed Cilin bristles the coat — density and hair length
+// both follow the expression level — and the Ciliary Motor Protein rows the
+// coat toward wherever its position tag sits. The sandbox sliders are zeroed
+// and disabled while the genome is driving the coat.
+let genomeDrivesCiliaState = false;
+let genomeCiliaMotor: CiliumMotorDrive = { x: 0, y: 0, strength: 0 };
+const applyGenomeCilia = (timeSeconds: number): void => {
+  const constructs = getGenome();
+  const coat = cilinFromConstructs(constructs, timeSeconds);
+  ciliation = coat.ciliation;
+  ciliaLength = coat.length;
+  genomeCiliaMotor = ciliumMotorDrive(ciliumMotorFromConstructs(constructs, timeSeconds));
+  // The drawn stroke follows the motor's dominant axis, so the coat visibly
+  // rows the way it is being pushed. The reverse button still flips it.
+  if (genomeCiliaMotor.strength > 0.02) {
+    const { x, y } = genomeCiliaMotor;
+    ciliaSwitch = Math.abs(x) >= Math.abs(y) ? (x < 0 ? "lateral" : "antilateral") : (y > 0 ? "polar" : "antipolar");
+  }
+};
+const syncGenomeCilia = (): void => {
+  // Potential-based check: an oscillatory construct resting at its trough must
+  // not hand the coat back to the sandbox sliders for a moment.
+  if (genomeCanDriveCilia(getGenome())) {
+    genomeDrivesCiliaState = true;
+    applyGenomeCilia(performance.now() / 1000);
+    ciliationSlider.value = "0";
+    ciliationSlider.disabled = true;
+    ciliationSlider.title = "Driven by expressed cilin in the genome";
+    ciliationReadout.textContent = "0";
+    ciliaLengthSlider.value = "0";
+    ciliaLengthSlider.disabled = true;
+    ciliaLengthSlider.title = "Driven by expressed cilin in the genome";
+    ciliaLengthReadout.textContent = "0.00";
+    for (const button of [ciliaSwitchLateral, ciliaSwitchAntilateral, ciliaSwitchPolar, ciliaSwitchAntipolar]) {
+      button.disabled = true;
+      button.title = "Driven by expressed ciliary motor protein in the genome";
+    }
+    return;
+  }
+  genomeDrivesCiliaState = false;
+  genomeCiliaMotor = { x: 0, y: 0, strength: 0 };
+  ciliationSlider.disabled = false;
+  ciliationSlider.title = "";
+  ciliaLengthSlider.disabled = false;
+  ciliaLengthSlider.title = "";
+  for (const button of [ciliaSwitchLateral, ciliaSwitchAntilateral, ciliaSwitchPolar, ciliaSwitchAntipolar]) {
+    button.disabled = false;
+    button.title = "";
+  }
+  ciliation = clamp(Math.round(Number(ciliationSlider.value)), 0, CILIATION_MAX);
+  ciliationReadout.textContent = String(ciliation);
+  ciliaLength = clamp(Number(ciliaLengthSlider.value), 0, 1);
+  ciliaLengthReadout.textContent = ciliaLength.toFixed(2);
+};
+subscribeGenome(syncGenomeCilia);
+syncGenomeCilia();
+
+// Genome lubricin: secreted Lubricin replaces the debug slider. The expression
+// level is the lubricity, so a thin film keeps a little along-wall motion and
+// a full coat keeps all of it. The slider is zeroed and disabled while the
+// genome owns the coat.
+let genomeDrivesLubricinState = false;
+const applyGenomeLubricin = (timeSeconds: number): void => {
+  lubricin = lubricinExpressionLevel(getGenome(), timeSeconds);
+  renderer.setTerrainSlide(terrainSlideKeep(lubricin));
+};
+const syncGenomeLubricin = (): void => {
+  // Potential-based check: an oscillatory construct resting at its trough must
+  // not hand lubricity back to the sandbox slider for a moment.
+  if (genomeCanDriveLubricin(getGenome())) {
+    genomeDrivesLubricinState = true;
+    applyGenomeLubricin(performance.now() / 1000);
+    lubricinSlider.value = "0";
+    lubricinSlider.disabled = true;
+    lubricinSlider.title = "Driven by expressed lubricin in the genome";
+    lubricinReadout.textContent = "0.00";
+    return;
+  }
+  genomeDrivesLubricinState = false;
+  lubricinSlider.disabled = false;
+  lubricinSlider.title = "";
+  lubricin = clamp(Number(lubricinSlider.value), 0, 1);
+  lubricinReadout.textContent = lubricin.toFixed(2);
+  renderer.setTerrainSlide(terrainSlideKeep(lubricin));
+};
+subscribeGenome(syncGenomeLubricin);
+syncGenomeLubricin();
 
 ciliationSlider.addEventListener("input", () => {
   ciliation = clamp(Math.round(Number(ciliationSlider.value)), 0, CILIATION_MAX);
@@ -1970,6 +2151,7 @@ function randomDrive(rng: () => number, flagellarSites: ReadonlyArray<(typeof ME
     ciliaOrder: rng(),
     ciliaSwitch: pickOne(rng, MENU_CILIA_SWITCHES),
     ciliaReverse: rng() < 0.5,
+    ciliaMotor: null,
     piliCount: Math.min(piliCeiling, rolledPili),
     piliLength: spanPick(rng, 0.15, 1),
     piliVariance: rng(),
@@ -2040,6 +2222,10 @@ function placeMenuSwimmer(
   const accept = (x: number, y: number, angle: number): BodyPose | null => {
     if (x < band.x0 || x > band.x1 || y < band.y0 || y > band.y1) return null;
     if (renderer.poseOverlaps(x, y, angle, body.length, body.width, body.bend, probes)) return null;
+    const candidate: Capsule = { x, y, angle, length: body.length, width: body.width };
+    for (const other of menuSwimmers) {
+      if (capsulesOverlap(candidate, menuCapsule(other))) return null;
+    }
     return { x, y, angle, length: body.length };
   };
   const xSpan = band.x1 - band.x0;
@@ -2191,11 +2377,62 @@ function menuSnapshot(cell: MenuSwimmer): CellSnapshot {
   };
 }
 
+function menuCapsule(swimmer: MenuSwimmer): Capsule {
+  const body = cellDimensions(swimmer.form.scale, swimmer.form.elongation, swimmer.form.girth, swimmer.form.crescent);
+  return { x: swimmer.pose.x, y: swimmer.pose.y, angle: swimmer.pose.angle, length: body.length, width: body.width };
+}
+
+function collideMenuSwimmers(): void {
+  const count = menuSwimmers.length;
+  if (count < 2) return;
+  const capsules: Capsule[] = [];
+  const reach: number[] = [];
+  for (const swimmer of menuSwimmers) {
+    const capsule = menuCapsule(swimmer);
+    capsules.push(capsule);
+    reach.push(Math.max(capsule.length, capsule.width) / 2);
+  }
+  for (let i = 0; i < count; i += 1) {
+    for (let j = i + 1; j < count; j += 1) {
+      const a = capsules[i];
+      const b = capsules[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const limit = reach[i] + reach[j];
+      if (dx * dx + dy * dy > limit * limit) continue;
+      const contact = capsuleGap(a, b);
+      if (contact.gap >= 0) continue;
+      const push = (-contact.gap + 1e-4) / 2;
+      const nx = contact.nx;
+      const ny = contact.ny;
+      a.x -= push * nx;
+      a.y -= push * ny;
+      b.x += push * nx;
+      b.y += push * ny;
+      menuSwimmers[i].pose.x = a.x;
+      menuSwimmers[i].pose.y = a.y;
+      menuSwimmers[j].pose.x = b.x;
+      menuSwimmers[j].pose.y = b.y;
+      const approach =
+        (menuSwimmers[i].swim.vx - menuSwimmers[j].swim.vx) * nx +
+        (menuSwimmers[i].swim.vy - menuSwimmers[j].swim.vy) * ny;
+      if (approach > 0) {
+        const share = approach / 2;
+        menuSwimmers[i].swim.vx -= share * nx;
+        menuSwimmers[i].swim.vy -= share * ny;
+        menuSwimmers[j].swim.vx += share * nx;
+        menuSwimmers[j].swim.vy += share * ny;
+      }
+    }
+  }
+}
+
 function stepMenuShowcase(dt: number, pixelsPerUnit: number): void {
   if (menuSwimmers.length === 0) spawnMenuSwimmers(pixelsPerUnit);
   if (titleStill) return;
   const band = menuBand(pixelsPerUnit);
   for (const swimmer of menuSwimmers) stepMenuSwimmer(swimmer, dt, band);
+  collideMenuSwimmers();
 }
 
 function releaseMenuShowcase(): void {
@@ -2222,6 +2459,13 @@ function frame(now: number): void {
   // Genome expression drives the flagella every frame: oscillatory promoters
   // swing the protein level, and the motor beat pulses even at constant levels.
   if (genomeDrivesFlagellinState) applyGenomeExpression(now / 1000, dt);
+  // Genome buoyancy follows the same clock so oscillatory promoters swing the
+  // vertical drift through their sine cycle.
+  if (genomeDrivesBuoyancyState) applyGenomeBuoyancy(now / 1000);
+  if (genomeDrivesCiliaState) applyGenomeCilia(now / 1000);
+  // Genome lubricin follows the same clock, so an oscillatory promoter swings
+  // how much along-wall motion the cell keeps.
+  if (genomeDrivesLubricinState) applyGenomeLubricin(now / 1000);
   const sample = session.sample();
   const view = sceneView(sample);
   if (!booted && renderer.worldReady()) {
@@ -2243,6 +2487,7 @@ function frame(now: number): void {
     separateCells(now, posed);
   }
   const cell = controlledCell(posed);
+  if (playing) applyGenomeRespiration(now / 1000, cell.x, cell.y, dt);
   const title = titleScreenOpen();
   if (title) {
     if (renderer.worldReady()) stepMenuShowcase(dt, view.pixels_per_unit);
@@ -2453,6 +2698,7 @@ const driveScratch: CellDrive = {
   ciliaOrder: 0,
   ciliaSwitch: "lateral",
   ciliaReverse: false,
+  ciliaMotor: null,
   piliCount: 0,
   piliLength: 0,
   piliVariance: 0,
@@ -2479,6 +2725,7 @@ function playerDrive(): CellDrive {
   driveScratch.ciliaOrder = ciliaOrder;
   driveScratch.ciliaSwitch = ciliaSwitch;
   driveScratch.ciliaReverse = ciliaReverse;
+  driveScratch.ciliaMotor = genomeDrivesCiliaState ? genomeCiliaMotor : null;
   driveScratch.piliCount = piliCount;
   driveScratch.piliLength = piliLength;
   driveScratch.piliVariance = piliVariance;
@@ -2532,6 +2779,7 @@ function cruise(
       ciliaOrder: drive.ciliaOrder,
       ciliaSwitch: drive.ciliaSwitch,
       ciliaReverse: drive.ciliaReverse,
+      ciliaMotor: drive.ciliaMotor ?? undefined,
     },
     dt,
   );

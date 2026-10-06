@@ -1,4 +1,5 @@
 import { pressureAt } from "./pressure";
+import { EXPRESSED_PROMOTERS, geneExpressionLevel, type FlagellinConstruct } from "./flagellinDistribution";
 
 /** Fastest rise from buoyin, in world units per second. */
 export const MAX_RISE_SPEED = 6;
@@ -34,4 +35,45 @@ function gatedRate(past: number, rate: number): number {
 
 function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+/**
+ * Buoyin (BUOY) and Ballastin (BALA) are soluble cytosolic modules, like the
+ * reductases: they work with no destination tag at all, and an explicit
+ * Cytosol tag changes nothing. Copies routed out of the cell or into the
+ * membrane never fold into the working module.
+ */
+const CYTOSOLIC_ROUTES = new Set(["CYTO"]);
+
+function cytosolicCopies(constructs: readonly FlagellinConstruct[]): FlagellinConstruct[] {
+  // An untagged construct is also cytosolic — no signal peptide means the
+  // protein stays in the cytosol — so it counts for a soluble module.
+  return constructs.map((construct) =>
+    construct.routeId === null ? { ...construct, routeId: "CYTO" } : construct,
+  );
+}
+
+/** Total copies of one buoyancy gene expressed right now, cytosolic copies only. */
+export function buoyancyExpressionLevel(
+  constructs: readonly FlagellinConstruct[],
+  geneId: string,
+  timeSeconds = 0,
+): number {
+  return geneExpressionLevel(cytosolicCopies(constructs), geneId, CYTOSOLIC_ROUTES, timeSeconds);
+}
+
+/**
+ * Whether any construct could ever put buoyancy protein in the cytosol,
+ * regardless of the current oscillation phase. The slider takeover uses this
+ * so a troughing oscillatory promoter never hands buoyancy back to the
+ * sandbox sliders for a moment.
+ */
+export function genomeCanDriveBuoyancy(constructs: readonly FlagellinConstruct[]): boolean {
+  return cytosolicCopies(constructs).some(
+    (construct) =>
+      (construct.geneId === "BUOY" || construct.geneId === "BALA") &&
+      EXPRESSED_PROMOTERS.has(construct.promoterId) &&
+      construct.routeId !== null &&
+      CYTOSOLIC_ROUTES.has(construct.routeId),
+  );
 }

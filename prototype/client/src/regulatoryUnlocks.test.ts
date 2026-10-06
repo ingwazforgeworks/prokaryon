@@ -1,10 +1,14 @@
 import {
+  geneUnlockCost,
+  isGeneDefault,
+  isGeneUnlocked,
   isPartDefault,
   isPartUnlocked,
   missingPartRequirements,
   partRequirementsMet,
   partUnlockCost,
   resetUnlocks,
+  unlockGene,
   unlockPart,
 } from "./geneUnlocks";
 import { mutationPointCount, setMutationPoints } from "./resources";
@@ -91,6 +95,18 @@ check(unlockPart("GRAD") && unlockPart("THRS") && unlockPart("OSCL") && unlockPa
 resetUnlocks();
 check(!isPartUnlocked("GRAD") && !isPartUnlocked("BILT"), "a reset clears purchased parts");
 check(isPartUnlocked("CNST") && isPartUnlocked("TransmembraneSignal"), "defaults survive a reset");
+
+// Gene defaults: the six top-level metabolism genes are free from the start of a cell's life.
+check(
+  isGeneDefault("ATPS") && isGeneDefault("FLUX") && isGeneDefault("FERP") &&
+    isGeneDefault("SLFP") && isGeneDefault("FERR") && isGeneDefault("SLFR"),
+  "the six metabolism genes are default unlocked",
+);
+check(!isGeneDefault("FLGN") && !isGeneDefault("OXDR") && !isGeneDefault("FCTR"), "no other gene is marked default");
+check(isGeneUnlocked("ATPS") && isGeneUnlocked("FERR"), "default genes read as unlocked");
+check(!isGeneUnlocked("FLGN"), "non-default genes stay locked after a reset");
+check(geneUnlockCost("ATPS") === null && geneUnlockCost("FERR") === null, "default genes cost no MP and cannot be bought");
+check(unlockGene("ATPS") === false && unlockGene("FERR") === false, "default genes reject purchase");
 
 if (failed > 0) throw new Error(`${failed} regulatory unlock checks failed`);
 console.log("regulatory unlock checks passed");

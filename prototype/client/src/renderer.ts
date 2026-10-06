@@ -5,7 +5,7 @@ import { appendRibbon, fillCilium, fillMix, fillWhip, mixScratch, stepFlail, ste
 import { bodyNormal, bodySignedDistance, ciliaStrokeSign, curvedHalfExtents, effectiveTaperDegrees, flagellumSiteAnchor, longAxisT, orientedCapsule, projectToMembrane, taperEffective, type BodyShape } from "./shape";
 import { Terrain, type PackedPointLights, type Pose, type TerrainFeature } from "./terrain";
 import { columnAttenuation, uvColumnAttenuation } from "./light";
-import { NutrientField } from "./nutrients";
+import { NutrientField, type NutrientKind } from "./nutrients";
 import { OxidexField } from "./oxidex";
 import { pressureAt, PressureField } from "./pressure";
 import { SulfexField } from "./sulfex";
@@ -1566,6 +1566,35 @@ export class CellRenderer {
 
   inspectFeatures(): TerrainFeature[] {
     return this.terrain.features();
+  }
+
+  /** Live concentration of one dissolved nutrient at a world point, 0 to 1. */
+  nutrientRead(kind: NutrientKind, x: number, y: number): number {
+    return this.nutrients.concentrations.read(kind, x, y);
+  }
+
+  /**
+   * Removes up to `fraction` of one dissolved nutrient from the water around a
+   * world point, for an importer drawing down its surroundings. The amount is
+   * spread over the cell's own texel plus a thin cross of its neighbors, with
+   * most of the drawdown at the center: the cell body is barely a texel wide,
+   * so the stain thins right under the feeder with only a narrow fringe past
+   * its outline. Returns the total amount that was actually there.
+   */
+  nutrientTake(kind: NutrientKind, x: number, y: number, fraction: number): number {
+    const concentrations = this.nutrients.concentrations;
+    const shares: ReadonlyArray<readonly [number, number, number]> = [
+      [0, 0, 0.6],
+      [1, 0, 0.1],
+      [-1, 0, 0.1],
+      [0, 1, 0.1],
+      [0, -1, 0.1],
+    ];
+    let removed = 0;
+    for (const [dx, dy, share] of shares) {
+      removed += concentrations.take(kind, x + dx, y + dy, fraction * share);
+    }
+    return removed;
   }
 
   /** Nutrient stain, oxidex, heat, pressure, sunlight, and UV at a world point. */

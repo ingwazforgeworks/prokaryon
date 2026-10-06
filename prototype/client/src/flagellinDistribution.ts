@@ -6,7 +6,7 @@ import type { FlagellumSite } from "./shape";
  */
 
 /** Promoters whose expression is simulated. Others produce no protein yet. */
-const EXPRESSED_PROMOTERS = new Set(["CNST", "OSCL"]);
+export const EXPRESSED_PROMOTERS = new Set(["CNST", "OSCL"]);
 
 /** Flagellin only assembles extracellular flagella when it is secreted. */
 const FUNCTIONAL_ROUTES = new Set(["SecretoryPeptide"]);
@@ -157,6 +157,27 @@ export function motorFromConstructs(
 }
 
 /**
+ * Total protein expressed for one gene through its functional routes, before it
+ * is distributed anywhere. Missing routes count nothing, and the total clamps
+ * at full expression.
+ */
+export function geneExpressionLevel(
+  constructs: readonly FlagellinConstruct[],
+  geneId: string,
+  functionalRoutes: ReadonlySet<string>,
+  timeSeconds = 0,
+): number {
+  let total = 0;
+  for (const construct of constructs) {
+    if (construct.geneId !== geneId) continue;
+    if (!EXPRESSED_PROMOTERS.has(construct.promoterId)) continue;
+    if (construct.routeId === null || !functionalRoutes.has(construct.routeId)) continue;
+    total += producedAmount(construct, timeSeconds);
+  }
+  return Math.min(1, total);
+}
+
+/**
  * Total motor protein expressed right now, before it is distributed to sites.
  * The beat clock reads this, so the pulse length tracks the promoter and
  * amount tiles rather than where the protein ends up. Position tags that
@@ -166,14 +187,7 @@ export function motorExpressionLevel(
   constructs: readonly FlagellinConstruct[],
   timeSeconds = 0,
 ): number {
-  let total = 0;
-  for (const construct of constructs) {
-    if (construct.geneId !== "FLGM") continue;
-    if (!EXPRESSED_PROMOTERS.has(construct.promoterId)) continue;
-    if (construct.routeId === null || !MOTOR_ROUTES.has(construct.routeId)) continue;
-    total += producedAmount(construct, timeSeconds);
-  }
-  return Math.min(1, total);
+  return geneExpressionLevel(constructs, "FLGM", MOTOR_ROUTES, timeSeconds);
 }
 
 /**
@@ -206,7 +220,8 @@ function producedAmount(construct: FlagellinConstruct, timeSeconds: number): num
   return lo + (hi - lo) * promoterPhase(construct.promoterId, timeSeconds);
 }
 
-function distributeBySite(
+/** Per-site protein levels from expressed constructs of one gene through its functional routes. */
+export function distributeBySite(
   constructs: readonly FlagellinConstruct[],
   geneId: string,
   functionalRoutes: ReadonlySet<string>,
@@ -227,6 +242,25 @@ function distributeBySite(
     lateral: Math.min(1, totals.lateral),
     antilateral: Math.min(1, totals.antilateral),
   };
+}
+
+/**
+ * Whether any construct could ever express this gene through these routes,
+ * regardless of the current oscillation phase. Ownership checks use this so a
+ * troughing oscillatory promoter never hands control back for a moment.
+ */
+export function genomeCanExpressGene(
+  constructs: readonly FlagellinConstruct[],
+  geneId: string,
+  functionalRoutes: ReadonlySet<string>,
+): boolean {
+  return constructs.some(
+    (construct) =>
+      construct.geneId === geneId &&
+      EXPRESSED_PROMOTERS.has(construct.promoterId) &&
+      construct.routeId !== null &&
+      functionalRoutes.has(construct.routeId),
+  );
 }
 
 export function genomeDrivesFlagellin(totals: FlagellinBySite): boolean {

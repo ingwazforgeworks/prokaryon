@@ -1,5 +1,5 @@
 import { GENES, type GeneRecord } from "./genes";
-import { geneUnlockCost, isGeneUnlocked, isPartDefault, isPartUnlocked, missingPartRequirements, partRequirementsMet, partUnlockCost, regulatoryPartById, subscribeUnlocks, unlockGene, unlockPart } from "./geneUnlocks";
+import { geneUnlockCost, isGeneDefault, isGeneUnlocked, isPartDefault, isPartUnlocked, missingPartRequirements, partRequirementsMet, partUnlockCost, regulatoryPartById, subscribeUnlocks, unlockGene, unlockPart } from "./geneUnlocks";
 import { mutationPointCount, onResources } from "./resources";
 import {
   REGULATORY_CATEGORY_ORDER,
@@ -1602,17 +1602,17 @@ function unlockBlock(node: TechNode): HTMLElement {
 }
 
 function geneUnlockBlock(geneId: string): HTMLElement {
+  if (isGeneUnlocked(geneId)) {
+    const state = document.createElement("p");
+    state.className = "genome-detail-meta tech-unlock-state";
+    state.textContent = isGeneDefault(geneId) ? "Unlocked by default" : "Unlocked";
+    return state;
+  }
   const cost = geneUnlockCost(geneId);
   if (cost === null) {
     const filler = document.createElement("p");
     filler.hidden = true;
     return filler;
-  }
-  if (isGeneUnlocked(geneId)) {
-    const state = document.createElement("p");
-    state.className = "genome-detail-meta tech-unlock-state";
-    state.textContent = "Unlocked";
-    return state;
   }
   const affordable = mutationPointCount() >= cost;
   const button = document.createElement("button");

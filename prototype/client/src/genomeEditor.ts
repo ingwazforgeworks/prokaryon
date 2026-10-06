@@ -18,6 +18,7 @@ import {
   removeCassette,
   scalarResponse,
   geneAcceptsRoute,
+  geneAcceptsSite,
   setDraftCode,
   setDraftName,
   tagRole,
@@ -393,7 +394,7 @@ export function initGenomeEditor(): void {
       joint("editor-joint-c"),
       tagModule("route", "Destination", value.routeId, false),
       joint("editor-joint-d"),
-      tagModule("site", "Position", value.siteId, value.routeId === "CYTO"),
+      tagModule("site", "Position", value.siteId, value.routeId === "CYTO" || !geneAcceptsSite(value.geneId)),
     );
     behavior.textContent = behaviorLine(value);
   }
@@ -620,6 +621,10 @@ export function initGenomeEditor(): void {
       if (part.kind === "tag" && tagRole(part.id) === "route" && !geneAcceptsRoute(getDraft().geneId, part.id)) {
         card.classList.add("is-dimmed");
         card.title = `${card.title} — not a valid destination for this gene`;
+      }
+      if (part.kind === "tag" && tagRole(part.id) === "site" && !geneAcceptsSite(getDraft().geneId)) {
+        card.classList.add("is-dimmed");
+        card.title = `${card.title} — this gene cannot take a position tag`;
       }
       const icon = document.createElement("img");
       icon.src = part.icon;

@@ -20,6 +20,11 @@ export const GENE_MP_COSTS: Readonly<Record<string, number>> = {
   BALA: 1,
 };
 
+/** The top-level metabolism genes every cell carries from the start of its life. */
+export const DEFAULT_GENES: readonly string[] = ["ATPS", "FLUX", "FERP", "SLFP", "FERR", "SLFR"];
+
+const defaultGenes = new Set(DEFAULT_GENES);
+
 type Listener = () => void;
 
 const listeners = new Set<Listener>();
@@ -32,8 +37,13 @@ export function geneUnlockCost(geneId: string): number | null {
   return typeof cost === "number" && cost >= 0 ? cost : null;
 }
 
+/** Whether a gene is free from the start of a cell's life. */
+export function isGeneDefault(geneId: string): boolean {
+  return defaultGenes.has(geneId);
+}
+
 export function isGeneUnlocked(geneId: string): boolean {
-  return unlocked.has(geneId);
+  return defaultGenes.has(geneId) || unlocked.has(geneId);
 }
 
 export function unlockedGeneIds(): readonly string[] {

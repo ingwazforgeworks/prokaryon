@@ -1,4 +1,11 @@
-import { buoyancyVelocity, MAX_RISE_SPEED, MAX_SINK_SPEED } from "./buoyancy";
+import {
+  buoyancyExpressionLevel,
+  buoyancyVelocity,
+  genomeCanDriveBuoyancy,
+  MAX_RISE_SPEED,
+  MAX_SINK_SPEED,
+} from "./buoyancy";
+import type { FlagellinConstruct } from "./flagellinDistribution";
 
 let failed = 0;
 
@@ -30,3 +37,54 @@ check(partialRise === 0.5 * MAX_RISE_SPEED, `half buoyin below its line rises at
 
 if (failed > 0) throw new Error(`${failed} buoyancy checks failed`);
 console.log("buoyancy checks passed");
+
+// --- Buoyancy expression from genome constructs ---
+
+const construct = (overrides: Partial<FlagellinConstruct> = {}): FlagellinConstruct => ({
+  promoterId: "CNST",
+  geneId: "BUOY",
+  amountId: "HYPER",
+  amountMinId: null,
+  amountMaxId: null,
+  routeId: "CYTO",
+  siteId: null,
+  ...overrides,
+});
+
+check(buoyancyExpressionLevel([], "BUOY") === 0, "no constructs express no buoyin");
+check(buoyancyExpressionLevel([construct()], "BUOY") === 1, "a hyperexpressed cytosolic buoyin reads full");
+check(buoyancyExpressionLevel([construct({ routeId: null })], "BUOY") === 1, "an untagged buoyin is cytosolic and counts");
+check(buoyancyExpressionLevel([construct({ routeId: "TransmembraneSignal" })], "BUOY") === 0, "a membrane-routed buoyin never folds into the vesicles");
+check(buoyancyExpressionLevel([construct({ routeId: "SecretoryPeptide" })], "BUOY") === 0, "a secreted buoyin is outside the cell and does nothing");
+check(buoyancyExpressionLevel([construct({ routeId: "SURF" })], "BUOY") === 0, "a surface-anchored buoyin does nothing");
+check(buoyancyExpressionLevel([construct({ promoterId: "GRAD" })], "BUOY") === 0, "unsimulated promoters produce no buoyin yet");
+check(buoyancyExpressionLevel([construct({ geneId: "FLGM" })], "BUOY") === 0, "motor constructs do not count as buoyin");
+check(buoyancyExpressionLevel([construct({ amountId: "MICRO" })], "BUOY") === 0.1, "microexpression scales the buoyin level");
+check(
+  buoyancyExpressionLevel([construct({ amountId: "MED" }), construct({ amountId: "MED" })], "BUOY") === 1,
+  "two half-strength buoyin constructs clamp at full",
+);
+const swing = { promoterId: "OSCL", amountId: null, amountMinId: "MICRO", amountMaxId: "HYPER" };
+check(buoyancyExpressionLevel([construct(swing)], "BUOY", 0) === 0.1, "an oscillatory buoyin rests at its minimum at t=0");
+check(buoyancyExpressionLevel([construct(swing)], "BUOY", 2) === 1, "an oscillatory buoyin peaks at its maximum at the half period");
+
+check(buoyancyExpressionLevel([construct({ geneId: "BALA" })], "BALA") === 1, "a hyperexpressed cytosolic ballastin reads full");
+check(buoyancyExpressionLevel([construct({ geneId: "BALA", routeId: null })], "BALA") === 1, "an untagged ballastin is cytosolic and counts");
+check(buoyancyExpressionLevel([construct({ geneId: "BALA", routeId: "TransmembraneSignal" })], "BALA") === 0, "a membrane-routed ballastin does nothing");
+check(buoyancyExpressionLevel([construct()], "BALA") === 0, "buoyin constructs do not count as ballastin");
+check(buoyancyExpressionLevel([construct({ geneId: "BALA" })], "BUOY") === 0, "ballastin constructs do not count as buoyin");
+
+check(genomeCanDriveBuoyancy([]) === false, "an empty genome cannot drive buoyancy");
+check(genomeCanDriveBuoyancy([construct()]) === true, "a cytosolic buoyin construct drives buoyancy");
+check(genomeCanDriveBuoyancy([construct({ geneId: "BALA" })]) === true, "a cytosolic ballastin construct drives buoyancy");
+check(genomeCanDriveBuoyancy([construct({ routeId: null })]) === true, "an untagged buoyin construct still drives buoyancy");
+check(genomeCanDriveBuoyancy([construct({ routeId: "TransmembraneSignal" })]) === false, "a membrane-routed buoyin construct cannot drive buoyancy");
+check(genomeCanDriveBuoyancy([construct({ promoterId: "GRAD" })]) === false, "an unsimulated promoter cannot drive buoyancy");
+check(genomeCanDriveBuoyancy([construct({ geneId: "FLGM" })]) === false, "a motor construct cannot drive buoyancy");
+check(
+  genomeCanDriveBuoyancy([construct(swing)]) === true,
+  "an oscillatory buoyin keeps driving buoyancy even at its trough",
+);
+
+if (failed > 0) throw new Error(`${failed} buoyancy checks failed`);
+console.log("buoyancy expression checks passed");

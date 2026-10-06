@@ -9,6 +9,7 @@
  */
 
 import { filamentsForFlagellin } from "./flagellum";
+import type { CiliumMotorDrive } from "./ciliaDistribution";
 import { capsuleArea, ciliaPlacements, ciliaStrokeSign, flagellarAxisLocal, flagellarBodyLength, flagellumSiteAnchor, type FlagellumSite } from "./shape";
 import type { CiliaSwitch } from "./types";
 
@@ -297,6 +298,13 @@ export interface SwimBody {
   /** Flips the power stroke, and the direction that stroke pushes the cell. */
   ciliaReverse: boolean;
   /**
+   * Net ciliary push from expressed motor protein, in body coordinates. When
+   * present it replaces the switch: each cilium rows toward this direction
+   * with the motor's strength, and a standstill motor (strength 0) leaves the
+   * coat bristling but idle.
+   */
+  ciliaMotor?: CiliumMotorDrive;
+  /**
    * True for the whole flagellar pulse, including a counterclockwise burst
    * that produces no thrust. Holds the release until that pulse ends.
    */
@@ -401,6 +409,8 @@ function flagellarForce(body: SwimBody): { x: number; y: number; torque: number 
  * antilateral toward the polar pole. A pole switch sends it across that axis: polar toward
  * the lateral flank, antipolar toward the antilateral flank. Reversal turns every stroke
  * around. Speed, sway, and order scale the push. At zero speed or sway, the hairs produce no force.
+ * A motor protein's drive replaces the switch: every cilium rows toward the motor's
+ * direction with its strength, and cilia whose oar cannot row that way sit out.
  */
 function ciliaryForce(body: SwimBody): { x: number; y: number; torque: number } {
   if (!ciliaBeating(body)) return { x: 0, y: 0, torque: 0 };
@@ -408,6 +418,7 @@ function ciliaryForce(body: SwimBody): { x: number; y: number; torque: number } 
   const sway = Math.min(Math.max(body.ciliaSway, 0), 1);
   const order = Math.min(Math.max(body.ciliaOrder, 0), 1);
   const mirror = body.ciliaReverse ? -1 : 1;
+  const motor = body.ciliaMotor;
   const placed = ciliaPlacements(body.ciliation, body.ciliaLength, body.length, body.width, body.bend);
   const cos = Math.cos(body.angle);
   const sin = Math.sin(body.angle);
@@ -415,8 +426,10 @@ function ciliaryForce(body: SwimBody): { x: number; y: number; torque: number } 
   let y = 0;
   let torque = 0;
   for (const cilium of placed) {
-    const stroke = ciliaStrokeSign(cilium.x, cilium.y, body.length, body.width, body.bend, body.ciliaSwitch) * mirror;
-    const push = cilium.length * speed * sway * order * CILIA_THRUST;
+    const stroke = motor
+      ? motorStrokeSign(cilium.dirX, cilium.dirY, motor.x, motor.y) * mirror
+      : ciliaStrokeSign(cilium.x, cilium.y, body.length, body.width, body.bend, body.ciliaSwitch) * mirror;
+    const push = cilium.length * speed * sway * order * CILIA_THRUST * (motor ? motor.strength : 1);
     const lx = -cilium.dirY * stroke;
     const ly = cilium.dirX * stroke;
     const fx = (cos * lx - sin * ly) * push;
@@ -430,7 +443,20 @@ function ciliaryForce(body: SwimBody): { x: number; y: number; torque: number } 
   return { x, y, torque };
 }
 
+/**
+ * Stroke sense that rows one cilium toward the motor's target direction: the
+ * sign of the cilium's rowing direction dotted with the target. A cilium whose
+ * oar lies across the target rows nothing.
+ */
+function motorStrokeSign(dirX: number, dirY: number, targetX: number, targetY: number): number {
+  const alignment = -dirY * targetX + dirX * targetY;
+  if (alignment > 1e-6) return 1;
+  if (alignment < -1e-6) return -1;
+  return 0;
+}
+
 function ciliaBeating(body: SwimBody): boolean {
+  if (body.ciliaMotor && !(body.ciliaMotor.strength > 0.02)) return false;
   return body.ciliation >= 1 && body.ciliaLength > 0.02 && body.ciliaSpeed > 0.02 && body.ciliaSway > 0.02;
 }
 

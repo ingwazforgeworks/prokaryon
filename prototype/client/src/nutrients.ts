@@ -285,6 +285,15 @@ const FADE = 0.16;
 const FLOW = 6;
 /** Matches the byte the water texture can show. Below this, an unsupplied cell is empty. */
 const FLOOR = 1 / 255;
+/** Refill suppression added for each fraction a transporter takes from a cell. */
+const EXHAUST_PER_FRACTION = 5;
+/**
+ * How fast a drawn-down cell shakes its suppression off, per second. A cell a
+ * feeder passed over stays dark for a few minutes while the deposit's supply
+ * and the swirl trickle back into it, so a depletion trail clears slowly and
+ * reads as a scar the cell carved through the plume.
+ */
+const EXHAUST_DECAY = 0.005;
 
 /**
  * Concentration in the water. Deposits write a supply. The live values can be
@@ -298,6 +307,8 @@ export class NutrientConcentrations {
   /** Sensing floor past the colored lobes. Never uploaded to the stain. */
   private readonly tail = new Float32Array(COUNT * 4);
   private readonly scratch = new Float32Array(COUNT * 4);
+  /** Per-channel refill suppression, 0 to 1, left by transporters drawing a cell down. */
+  private readonly drawn = new Float32Array(COUNT * 4);
   private generation = Number.NaN;
   private seeded = false;
   private accumulator = 0;
@@ -321,6 +332,7 @@ export class NutrientConcentrations {
     if (generation < 0) return;
     this.target.fill(0);
     this.tail.fill(0);
+    this.drawn.fill(0);
     this.rock.fill(0);
     this.rowLive.fill(0);
     this.useRock = Boolean(blocked);
@@ -384,7 +396,10 @@ export class NutrientConcentrations {
     return stored;
   }
 
-  /** Removes up to `amount` from that cell. Returns what was actually there. */
+  /** Removes up to `amount` from that cell. Returns what was actually there.
+   * The cell remembers the drawdown: its refill from the deposit, from
+   * diffusion, and from the swirl is suppressed until the memory fades, so a
+   * feeding cell carves a hole that heals gradually rather than snapping back. */
   take(kind: NutrientKind, x: number, y: number, amount: number): number {
     if (!(amount > 0)) return 0;
     const index = this.cellIndex(x, y, kind);
@@ -393,6 +408,7 @@ export class NutrientConcentrations {
     const removed = amount < held ? amount : held;
     if (removed <= 0) return 0;
     this.values[index] = held - removed;
+    this.drawn[index] = Math.min(1, this.drawn[index] + removed * EXHAUST_PER_FRACTION);
     const row = Math.floor((y - NUTRIENT_ORIGIN_Y) / NUTRIENT_CELL);
     this.rowLive[row] = 1;
     this.rowDirty[row] = 1;
@@ -527,6 +543,7 @@ export class NutrientConcentrations {
     const dst = this.scratch;
     this.copyLive(src, dst);
     const time = this.time;
+    const drawn = this.drawn;
     const stride = NUTRIENT_COLUMNS * 4;
     const columns = NUTRIENT_COLUMNS;
     const gain = h * FLOW;
@@ -557,22 +574,24 @@ export class NutrientConcentrations {
           if (held === 0) continue;
           const at = index + channel;
           if (east) {
-            const moved = held * east;
+            // The swirl hands water to a drawn-down cell as reluctantly as the
+            // deposit does, so the hole a feeder carves persists.
+            const moved = held * east * (1 - Math.max(drawn[at], drawn[at + 4]));
             dst[at] -= moved;
             dst[at + 4] += moved;
           }
           if (west) {
-            const moved = held * west;
+            const moved = held * west * (1 - Math.max(drawn[at], drawn[at - 4]));
             dst[at] -= moved;
             dst[at - 4] += moved;
           }
           if (north) {
-            const moved = held * north;
+            const moved = held * north * (1 - Math.max(drawn[at], drawn[at + stride]));
             dst[at] -= moved;
             dst[at + stride] += moved;
           }
           if (south) {
-            const moved = held * south;
+            const moved = held * south * (1 - Math.max(drawn[at], drawn[at - stride]));
             dst[at] -= moved;
             dst[at - stride] += moved;
           }
@@ -599,10 +618,10 @@ export class NutrientConcentrations {
         if (this.blockedCell(column, row)) continue;
         const index = (row * NUTRIENT_COLUMNS + column) * 4;
         if (column + 1 < columns && !this.blockedCell(column + 1, row)) {
-          exchangeAll(src, dst, index, index + 4, gain);
+          exchangeAll(src, dst, this.drawn, index, index + 4, gain);
         }
         if (row + 1 < NUTRIENT_ROWS && !this.blockedCell(column, row + 1)) {
-          exchangeAll(src, dst, index, index + stride, gain);
+          exchangeAll(src, dst, this.drawn, index, index + stride, gain);
         }
       }
     }
@@ -614,6 +633,7 @@ export class NutrientConcentrations {
     const fade = 1 - Math.exp(-FADE * h);
     const values = this.values;
     const target = this.target;
+    const drawn = this.drawn;
     const stride = NUTRIENT_COLUMNS * 4;
     for (let row = 0; row < NUTRIENT_ROWS; row += 1) {
       if (!this.rowLive[row]) continue;
@@ -621,7 +641,9 @@ export class NutrientConcentrations {
       const stop = start + stride;
       for (let index = start; index < stop; index += 1) {
         const pull = target[index] - values[index];
-        if (pull > 0) values[index] += emit * pull;
+        const drain = drawn[index];
+        if (drain > 0) drawn[index] = drain > EXHAUST_DECAY * h ? drain - EXHAUST_DECAY * h : 0;
+        if (pull > 0) values[index] += emit * (1 - drain) * pull;
         else if (pull < 0) values[index] += fade * pull;
         if (values[index] < 0) values[index] = 0;
         else if (target[index] <= 0 && values[index] < FLOOR) values[index] = 0;
@@ -662,12 +684,24 @@ function flowNoise(column: number, row: number, time: number): number {
   return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v;
 }
 
-function exchangeAll(src: Float32Array, dst: Float32Array, a: number, b: number, gain: number): void {
+function exchangeAll(
+  src: Float32Array,
+  dst: Float32Array,
+  drawn: Float32Array,
+  a: number,
+  b: number,
+  gain: number,
+): void {
   for (let channel = 0; channel < 4; channel += 1) {
     const left = a + channel;
     const right = b + channel;
     if (src[left] === 0 && src[right] === 0) continue;
-    const flux = gain * (src[right] - src[left]);
+    // A drawn-down cell exchanges with its neighbors slowly, so a depletion
+    // hole does not diffuse shut the moment the feeder moves on.
+    const damp = 1 - Math.max(drawn[left], drawn[right]);
+    if (damp <= 0) continue;
+    const flux = gain * damp * (src[right] - src[left]);
+    if (flux === 0) continue;
     dst[left] += flux;
     dst[right] -= flux;
   }

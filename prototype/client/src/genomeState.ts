@@ -1,5 +1,5 @@
 import { GENES, type GeneRecord } from "./genes";
-import { isPartUnlocked, unlockedGeneIds } from "./geneUnlocks";
+import { isGeneUnlocked, isPartUnlocked } from "./geneUnlocks";
 import { missingGeneRequirements } from "./techTree";
 
 const REGULATORY_ICON_DIR = "/ui/genome_viewer/regulatory_icons";
@@ -297,7 +297,7 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
   NITP: { routeId: "SecretoryPeptide", siteId: "AntiPolarLocalizationSignal" },
   OXDP: { routeId: "SecretoryPeptide", siteId: "BIPO" },
   LIPP: { routeId: "SecretoryPeptide", siteId: "LATR" },
-  SLFP: { routeId: "SecretoryPeptide", siteId: "ANTL" },
+  SLFP: { routeId: "TransmembraneSignal", siteId: null },
   CBXP: { routeId: "SecretoryPeptide", siteId: "BILT" },
   ATPS: { routeId: "TransmembraneSignal", siteId: null },
   ADHN: { routeId: "SURF", siteId: null },
@@ -312,7 +312,14 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
   PILN: { routeId: null, siteId: "AntiPolarLocalizationSignal" },
   CHMR: { routeId: null, siteId: "BIPO" },
   CHLS: { routeId: null, siteId: "LATR" },
-  FERP: { routeId: null, siteId: "ANTL" },
+  FERP: { routeId: "TransmembraneSignal", siteId: null },
+  FERR: { routeId: "CYTO", siteId: null },
+  SLFR: { routeId: "CYTO", siteId: null },
+  BUOY: { routeId: "CYTO", siteId: null },
+  BALA: { routeId: "CYTO", siteId: null },
+  LUBR: { routeId: "SecretoryPeptide", siteId: null },
+  CILN: { routeId: "SecretoryPeptide", siteId: null },
+  CILM: { routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" },
   FRMP: { routeId: null, siteId: "BILT" },
 };
 
@@ -379,6 +386,27 @@ export function tagRole(id: string): TagRole | null {
 const GENE_ROUTES: Record<string, string[]> = {
   FLGN: ["SecretoryPeptide"],
   FLGM: ["TransmembraneSignal"],
+  FERP: ["TransmembraneSignal"],
+  SLFP: ["TransmembraneSignal"],
+  FERR: ["CYTO"],
+  SLFR: ["CYTO"],
+  BUOY: ["CYTO"],
+  BALA: ["CYTO"],
+  CILN: ["SecretoryPeptide"],
+  LUBR: ["SecretoryPeptide"],
+  CILM: ["TransmembraneSignal"],
+};
+
+/** Genes that cannot carry a position tag. Genes left out take any position. */
+const GENE_SITES: Record<string, string[]> = {
+  FERP: [],
+  SLFP: [],
+  FERR: [],
+  SLFR: [],
+  BUOY: [],
+  BALA: [],
+  CILN: [],
+  LUBR: [],
 };
 
 /**
@@ -389,6 +417,16 @@ export function geneAcceptsRoute(geneId: string | null, routeId: string): boolea
   if (geneId === null) return true;
   const allowed = GENE_ROUTES[geneId];
   return allowed === undefined || allowed.includes(routeId);
+}
+
+/**
+ * Whether a gene accepts a position tag at all. Genes without a restriction
+ * take any position; the restriction only binds once the coding region is placed.
+ */
+export function geneAcceptsSite(geneId: string | null): boolean {
+  if (geneId === null) return true;
+  const allowed = GENE_SITES[geneId];
+  return allowed === undefined || allowed.length > 0;
 }
 
 /** True when the promoter varies between a minimum and a maximum amount. */
@@ -403,7 +441,7 @@ export function dropTargets(id: string): Slot[] {
   if (kind === "gene") return ["coding"];
   const role = tagRole(id);
   if (role === "route") return geneAcceptsRoute(draft.geneId, id) ? ["route"] : [];
-  if (role === "site" && draft.routeId !== "CYTO") return ["site"];
+  if (role === "site" && draft.routeId !== "CYTO" && geneAcceptsSite(draft.geneId)) return ["site"];
   return [];
 }
 
@@ -444,7 +482,7 @@ export function unlockedGenes(): CatalogPart[] {
   const present = genomeGeneIds();
   if (!catalogPopulated) {
     const made = new Set(genome.map((cassette) => cassette.geneId));
-    for (const id of unlockedGeneIds()) made.add(id);
+    for (const gene of GENES) if (isGeneUnlocked(gene.id)) made.add(gene.id);
     return GENES.filter((gene) => made.has(gene.id)).map(genePart);
   }
   return GENES.filter((gene) => missingGeneRequirements(gene.id, present).length === 0).map(genePart);
@@ -532,10 +570,16 @@ export function draftProblems(value: Draft = draft, present: ReadonlySet<string>
   if (value.routeId && tagRole(value.routeId) !== "route") problems.push("Destination tag is not in the catalog.");
   if (value.routeId && !geneAcceptsRoute(value.geneId, value.routeId)) {
     const gene = value.geneId ? genesById.get(value.geneId) : undefined;
-    const route = tagsById.get(value.routeId);
-    problems.push(`${gene?.name ?? "This gene"} only takes the ${route?.name ?? "matching"} destination tag.`);
+    const accepted = (GENE_ROUTES[value.geneId ?? ""] ?? [])
+      .map((id) => tagsById.get(id)?.name ?? id)
+      .join(" or ");
+    problems.push(`${gene?.name ?? "This gene"} only takes the ${accepted || "matching"} destination tag.`);
   }
   if (value.siteId && (value.routeId === "CYTO" || tagRole(value.siteId) !== "site")) problems.push("Cytosolic localization cannot take a second tag.");
+  if (value.siteId && !geneAcceptsSite(value.geneId)) {
+    const gene = value.geneId ? genesById.get(value.geneId) : undefined;
+    problems.push(`${gene?.name ?? "This gene"} cannot take a position tag.`);
+  }
   return problems;
 }
 
