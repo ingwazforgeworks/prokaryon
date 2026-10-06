@@ -14,6 +14,13 @@ const HOTKEYS: Partial<Record<string, DockTab>> = {
 const HOVER_SOUND = UI_HOVER;
 const CLICK_SOUND = UI_SELECT;
 
+const environmentListeners = new Set<(visible: boolean) => void>();
+
+/** Dissolved-nutrient plumes follow the Environment dock button. */
+export function onEnvironmentVisible(listener: (visible: boolean) => void): void {
+  environmentListeners.add(listener);
+}
+
 export function initDock(): void {
   const dock = document.querySelector<HTMLElement>("#dock");
   const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".dock-tab"));
@@ -32,11 +39,21 @@ export function initDock(): void {
   const hoverSound = createUiSound(HOVER_SOUND);
   const clickSound = createUiSound(CLICK_SOUND);
   let open: "genome" | "codex" | "tech-tree" | "expression" | null = null;
+  let environmentOn = false;
 
   const setPressed = (tab: DockTab | null): void => {
     for (const button of tabs) {
-      button.setAttribute("aria-pressed", button.dataset.dock === tab ? "true" : "false");
+      const dock = button.dataset.dock;
+      const on = dock === "environment" ? environmentOn : dock === tab;
+      button.setAttribute("aria-pressed", on ? "true" : "false");
     }
+  };
+
+  const setEnvironment = (next: boolean): void => {
+    if (environmentOn === next) return;
+    environmentOn = next;
+    setPressed(open);
+    for (const listener of environmentListeners) listener(environmentOn);
   };
 
   const setOpen = (next: "genome" | "codex" | "tech-tree" | "expression" | null): void => {
@@ -54,8 +71,7 @@ export function initDock(): void {
       setOpen(open === tab ? null : tab);
       return;
     }
-    setOpen(null);
-    setPressed(tab);
+    setEnvironment(!environmentOn);
   };
 
   viewerClose.addEventListener("click", () => {

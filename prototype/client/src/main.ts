@@ -1,7 +1,7 @@
 import { buoyancyVelocity } from "./buoyancy";
 import { bootFinish, bootMark } from "./boot";
 import { initCodex } from "./codex";
-import { initDock } from "./dock";
+import { initDock, onEnvironmentVisible } from "./dock";
 import { createInspect, playerCellTarget } from "./inspect";
 import { initGenomeEditor } from "./genomeEditor";
 import { initExpression, syncExpressionCell } from "./expression";
@@ -1429,6 +1429,7 @@ const session = new SimulationSession((status) => {
 });
 
 initDock();
+onEnvironmentVisible((visible) => renderer.setNutrientsVisible(visible));
 initGenomeViewer();
 initExpression();
 initGenomeEditor();

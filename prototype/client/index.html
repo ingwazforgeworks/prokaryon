@@ -62,6 +62,35 @@
         transition: opacity 160ms linear;
         pointer-events: none;
       }
+      #mobile-block {
+        display: none;
+      }
+      html[data-phone] #mobile-block {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: grid;
+        place-items: center;
+        box-sizing: border-box;
+        padding: 28px;
+        background: #000;
+      }
+      html[data-phone] #mobile-block p {
+        margin: 0;
+        max-width: 18em;
+        color: #fff;
+        font-family: "Departure Mono", ui-monospace, monospace;
+        font-size: 13px;
+        line-height: 20px;
+        letter-spacing: 0.4px;
+        text-align: center;
+      }
+      html[data-phone] #boot,
+      html[data-phone] #title,
+      html[data-phone] #ui,
+      html[data-phone] #view {
+        display: none !important;
+      }
       #boot-stack {
         display: flex;
         flex-direction: column;
@@ -415,10 +444,27 @@
         white-space: nowrap;
       }
       .species {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        align-items: center;
+        width: 100%;
+        flex: none;
+      }
+      .species-select {
+        grid-column: 2;
         display: flex;
         align-items: center;
         gap: 6px;
-        flex: none;
+      }
+      .debug-keys {
+        grid-column: 3;
+        margin: 0 0 0 16px;
+        min-width: 0;
+        overflow: hidden;
+        color: #9aabaa;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        pointer-events: none;
       }
       .species-step {
         width: 24px;
@@ -3137,6 +3183,19 @@
     </style>
     <script>
       (function () {
+        function isPhone() {
+          var ua = navigator.userAgent || "";
+          if (/iPhone|iPod|Windows Phone|IEMobile|BlackBerry|BB10|Opera Mini|webOS/i.test(ua)) return true;
+          if (/Android/i.test(ua) && /Mobile/i.test(ua)) return true;
+          var screen = window.screen || {};
+          var shortSide = Math.min(screen.width || 0, screen.height || 0);
+          var coarse = window.matchMedia("(pointer: coarse)").matches;
+          if (coarse && shortSide > 0 && shortSide <= 520) return true;
+          var data = navigator.userAgentData;
+          if (data && data.mobile && shortSide > 0 && shortSide <= 520) return true;
+          return false;
+        }
+        if (isPhone()) document.documentElement.setAttribute("data-phone", "");
         function clamp(value) {
           var stepped = Math.round(value * 20) / 20;
           if (stepped < 0.75) return 0.75;
@@ -3162,6 +3221,9 @@
     </script>
   </head>
   <body>
+    <div id="mobile-block" role="alert">
+      <p>Prokaryon is not accessible on a mobile device</p>
+    </div>
     <div id="boot" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
       <div id="boot-stack">
         <div id="boot-track"><div id="boot-fill"></div></div>
@@ -3170,6 +3232,7 @@
     </div>
     <script>
       (function () {
+        if (document.documentElement.hasAttribute("data-phone")) return;
         var boot = document.getElementById("boot");
         var fill = document.getElementById("boot-fill");
         var label = document.getElementById("boot-label");
@@ -3848,9 +3911,12 @@
       </button>
       <p class="species-name" id="species-name"></p>
       <div class="species" id="species">
-        <button type="button" class="species-step" id="species-prev" aria-label="Previous individual" disabled>‹</button>
-        <span class="species-count" id="species-count" title="Cell 001">Cell 001</span>
-        <button type="button" class="species-step" id="species-next" aria-label="Next individual" disabled>›</button>
+        <div class="species-select">
+          <button type="button" class="species-step" id="species-prev" aria-label="Previous individual" disabled>‹</button>
+          <span class="species-count" id="species-count" title="Cell 001">Cell 001</span>
+          <button type="button" class="species-step" id="species-next" aria-label="Next individual" disabled>›</button>
+        </div>
+        <p class="debug-keys">Press 'O' and 'P' for debug settings</p>
       </div>
     </div>
     <section id="resource-pool" hidden aria-label="Cell resource pool">

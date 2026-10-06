@@ -1088,6 +1088,7 @@ export class CellRenderer {
   private heatTime = 0;
   private texelGrid = false;
   private fieldOverlay: FieldOverlay | null = null;
+  private showNutrients = false;
   private sunBrightness = 1;
   private temperatureRevision = -1;
   private oxidexRevision = -1;
@@ -1194,6 +1195,10 @@ export class CellRenderer {
 
   setTexelGrid(enabled: boolean): void {
     this.texelGrid = enabled;
+  }
+
+  setNutrientsVisible(visible: boolean): void {
+    this.showNutrients = visible;
   }
 
   setFieldOverlay(overlay: FieldOverlay | null): void {
@@ -1347,6 +1352,7 @@ export class CellRenderer {
       this.sulfexTexture,
       this.nutrients.texture,
       this.terrain.shoreFieldData(),
+      this.showNutrients,
     );
     this.decorations.draw("back", halfView, snapped, intensity, lights, drawnPixelsPerUnit);
     this.decorations.draw("mid", halfView, snapped, intensity, lights, drawnPixelsPerUnit);

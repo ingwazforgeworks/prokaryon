@@ -53,6 +53,7 @@ uniform sampler2D uShore;
 uniform sampler2D uNutrients;
 uniform vec2 uShoreOrigin;
 uniform vec2 uShoreSpan;
+uniform float uShowNutrients;
 out vec4 fragColor;
 vec4 dissolved(vec2 uv) {
   vec2 s = 1.1 / uShoreSpan;
@@ -102,7 +103,7 @@ void main() {
   hue = weight > 0.0001 ? hue / weight : water;
   float peak = max(max(nutrient.r, nutrient.g), max(nutrient.b, nutrient.a));
   float open = smoothstep(0.012, 0.04, texture(uShore, uv).r);
-  float cover = peak * 0.4 * open;
+  float cover = peak * 0.4 * open * uShowNutrients;
   fragColor = vec4(mix(water, hue, cover), 1.0);
 }`;
 
@@ -298,11 +299,12 @@ export class BackgroundPass {
     sulfex: WebGLTexture,
     nutrients: WebGLTexture,
     shore: ShoreField | null,
+    showNutrients: boolean,
   ): void {
     this.time += dt;
     const gl = this.gl;
     gl.disable(gl.BLEND);
-    this.drawWater(halfView, camera, sun, lights, shore, nutrients);
+    this.drawWater(halfView, camera, sun, lights, shore, nutrients, showNutrients);
     this.drawParticles(halfView, camera, pixelsPerUnit, intensity, temperature, oxidex, sulfex);
   }
 
@@ -323,6 +325,7 @@ export class BackgroundPass {
     lights: PackedPointLights,
     shore: ShoreField | null,
     nutrients: WebGLTexture,
+    showNutrients: boolean,
   ): void {
     const gl = this.gl;
     const program = this.waterProgram;
@@ -348,6 +351,7 @@ export class BackgroundPass {
       gl.uniform2f(uniform(gl, program, "uShoreOrigin"), 0, 0);
       gl.uniform2f(uniform(gl, program, "uShoreSpan"), 1, 1);
     }
+    gl.uniform1f(uniform(gl, program, "uShowNutrients"), showNutrients ? 1 : 0);
     this.drawQuad(program);
   }
 

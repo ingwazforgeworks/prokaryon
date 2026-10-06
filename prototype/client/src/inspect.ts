@@ -71,7 +71,9 @@ export function createInspect(host: HTMLCanvasElement, view: InspectView) {
   inner.append(titleEl, linesEl);
   body.append(inner);
   panel.append(head, body);
-  document.body.append(corners, panel);
+  document.body.append(corners);
+  const ui = document.getElementById("ui");
+  (ui ?? document.body).append(panel);
 
   let enabled = true;
   let targets: readonly InspectTarget[] = [];
