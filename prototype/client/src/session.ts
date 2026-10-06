@@ -12,6 +12,7 @@ export class SimulationSession {
   constructor(private readonly onStatus: (status: string) => void) {}
 
   start(): void {
+    if (location.protocol === "https:" && SOCKET_URL.startsWith("ws:")) return;
     this.connect();
   }
 

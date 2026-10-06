@@ -23,7 +23,7 @@ import { acceptedVelocity, collisionSpin, flagellarPulseLabel, independentPulseS
 import { TAPER_ALL, TAPER_ANTILATERAL, TAPER_ANTIPOLAR, TAPER_LATERAL, TAPER_POLAR, capsuleArea, cellSeparation, ciliaPlacements, curvedHalfExtents, divisionAxisOffset, flagellarBodyLength, maxPiliOnSite, orientedCapsule, piliPlacements, pilusVolumeSamples, vibrioHalfAngle, type BodyShape, type FlagellumSite, type PilusSite, type PosedBody } from "./shape";
 import { adhesinPull, terrainSlideKeep } from "./terrain";
 import { texelIdAt } from "./texels";
-import type { CellSnapshot, CellTaper, CiliaSwitch, CiliumSnapshot, FlagellumSnapshot, PilusSnapshot } from "./types";
+import type { CellSnapshot, CellTaper, CiliaSwitch, CiliumSnapshot, FlagellumSnapshot, PilusSnapshot, ViewSnapshot } from "./types";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view");
 if (!canvas) throw new Error("missing canvas");
@@ -33,6 +33,7 @@ const MOVE_SPEED = 5.5;
 const SHIFT_BOOST = 10;
 const TURN_SPEED = 1.8;
 const BODY_WIDTH = 0.75;
+const PIXELS_PER_UNIT = 32;
 
 const SIZE_MIN = 0.5;
 const SIZE_MAX = 3;
@@ -1817,11 +1818,24 @@ function releaseMenuShowcase(): void {
   menuSwimmers.length = 0;
 }
 
+function sceneView(sample: { view: ViewSnapshot } | null): ViewSnapshot {
+  return (
+    sample?.view ?? {
+      half_width: 0,
+      half_height: 0,
+      logical_width: 0,
+      logical_height: 0,
+      pixels_per_unit: PIXELS_PER_UNIT,
+    }
+  );
+}
+
 function frame(now: number): void {
   fillDecorTypes();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const sample = session.sample();
+  const view = sceneView(sample);
   if (!booted && renderer.worldReady()) {
     if (worldReadyAt === null) worldReadyAt = now;
     if (sample || now - worldReadyAt > 1500) {
@@ -1829,41 +1843,39 @@ function frame(now: number): void {
       bootFinish();
     } else bootMark("session", 0.4);
   }
-  if (sample) {
-    if (sunOrigin === null) sunOrigin = now;
-    const playing = !titleScreenOpen();
-    if (playing) {
-      stepSurfaceFades(now);
-      stepControlled(dt);
-      for (const sibling of siblings) stepSibling(sibling, dt);
-    }
-    const posed = advanceDivision(now);
-    if (playing) {
-      advanceSiblingDivisions(now);
-      separateCells(now, posed);
-    }
-    const cell = controlledCell(posed);
-    const title = titleScreenOpen();
-    if (title) {
-      if (renderer.worldReady()) stepMenuShowcase(dt, sample.view.pixels_per_unit);
-    } else if (menuSwimmers.length > 0) releaseMenuShowcase();
-    if (showingTitle && !title) renderer.placeCamera(cell.x, cell.y);
-    showingTitle = title;
-    const camera: [number, number] = title ? titleGlance(now, sample.view.pixels_per_unit) : [cell.x, cell.y];
-    updatePosition(cell.x, cell.y);
-    debug.follow(sunCycle((now - sunOrigin) / 1000));
-    renderer.setSunBrightness(debug.brightness());
-    const intensity = debug.brightness() * columnAttenuation(title ? camera[1] : cell.y);
-    debug.showBrightness(intensity);
-    const drawn = title
-      ? menuSwimmers.map((swimmer) => menuSnapshot(swimmer))
-      : [cell, ...siblings.map((sibling) => siblingSnapshot(sibling, now))];
-    renderer.render(sample.view, drawn, dt, debug.direction(), intensity, camera);
-    refreshSpecies();
-    inspect.update([playerCellTarget(cell), ...renderer.inspectFeatures()]);
-    syncExpressionCell(cell);
-    if (!editMode && canvas) canvas.style.cursor = inspect.hovering() ? "pointer" : "";
+  if (sunOrigin === null) sunOrigin = now;
+  const playing = !titleScreenOpen();
+  if (playing) {
+    stepSurfaceFades(now);
+    stepControlled(dt);
+    for (const sibling of siblings) stepSibling(sibling, dt);
   }
+  const posed = advanceDivision(now);
+  if (playing) {
+    advanceSiblingDivisions(now);
+    separateCells(now, posed);
+  }
+  const cell = controlledCell(posed);
+  const title = titleScreenOpen();
+  if (title) {
+    if (renderer.worldReady()) stepMenuShowcase(dt, view.pixels_per_unit);
+  } else if (menuSwimmers.length > 0) releaseMenuShowcase();
+  if (showingTitle && !title) renderer.placeCamera(cell.x, cell.y);
+  showingTitle = title;
+  const camera: [number, number] = title ? titleGlance(now, view.pixels_per_unit) : [cell.x, cell.y];
+  updatePosition(cell.x, cell.y);
+  debug.follow(sunCycle((now - sunOrigin) / 1000));
+  renderer.setSunBrightness(debug.brightness());
+  const intensity = debug.brightness() * columnAttenuation(title ? camera[1] : cell.y);
+  debug.showBrightness(intensity);
+  const drawn = title
+    ? menuSwimmers.map((swimmer) => menuSnapshot(swimmer))
+    : [cell, ...siblings.map((sibling) => siblingSnapshot(sibling, now))];
+  renderer.render(view, drawn, dt, debug.direction(), intensity, camera);
+  refreshSpecies();
+  inspect.update([playerCellTarget(cell), ...renderer.inspectFeatures()]);
+  syncExpressionCell(cell);
+  if (!editMode && canvas) canvas.style.cursor = inspect.hovering() ? "pointer" : "";
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
