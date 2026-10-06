@@ -4,12 +4,13 @@ import { DecorationField, type DecorationLayer, type DecorationStamp, type Decor
 import { appendRibbon, fillCilium, fillMix, fillWhip, mixScratch, stepFlail, stepLazyChain, whipScratch, type RibbonPoint } from "./flagellum";
 import { bodyNormal, bodySignedDistance, ciliaStrokeSign, curvedHalfExtents, effectiveTaperDegrees, flagellumSiteAnchor, longAxisT, orientedCapsule, projectToMembrane, taperEffective, type BodyShape } from "./shape";
 import { Terrain, type PackedPointLights, type Pose, type TerrainFeature } from "./terrain";
+import { columnAttenuation, uvColumnAttenuation } from "./light";
 import { NutrientField } from "./nutrients";
 import { OxidexField } from "./oxidex";
-import { PressureField } from "./pressure";
+import { pressureAt, PressureField } from "./pressure";
 import { SulfexField } from "./sulfex";
 import { TemperatureField } from "./temperature";
-import { TEXEL_COLUMNS, TEXEL_ORIGIN_X, TEXEL_ORIGIN_Y, TEXEL_ROWS, TEXEL_SIZE, TEXEL_SPAN_X, TEXEL_SPAN_Y } from "./texels";
+import { TEXEL_COLUMNS, TEXEL_ORIGIN_X, TEXEL_ORIGIN_Y, TEXEL_ROWS, TEXEL_SIZE, TEXEL_SPAN_X, TEXEL_SPAN_Y, texelAt } from "./texels";
 import type { CellSnapshot, ViewSnapshot } from "./types";
 
 const LOGICAL_WIDTH = 640;
@@ -931,6 +932,62 @@ void main() {
 
 export type FieldOverlay = "temperature" | "oxidex" | "sulfex" | "pressure";
 
+export interface EnvironmentNutrient {
+  name: string;
+  /** Fraction of saturation, 0 to 1. */
+  amount: number;
+}
+
+/** Dissolved nutrients and the physical conditions at one world point. */
+export interface EnvironmentReading {
+  /** Celsius. Null outside the water column. */
+  temperature: number | null;
+  /** 0 at the surface, 1 at the bottom of the column. */
+  pressure: number;
+  /** Sunlight reaching this depth, 0 to 1. */
+  light: number;
+  /** UV reaching this depth, 0 to 1. Same sun, steeper depth falloff. */
+  uv: number;
+  nutrients: readonly EnvironmentNutrient[];
+}
+
+/** Neighbor centers inside this distance still contribute. Two texel widths. */
+const TEXEL_SAMPLE_RADIUS = TEXEL_SIZE * 2;
+
+/**
+ * Distance-weighted average of texel centers around a point.
+ * Weight falls to zero at the radius, so a center entering the neighborhood does not pop.
+ */
+function sampleTexelField(values: ArrayLike<number>, x: number, y: number): number | null {
+  const radius = TEXEL_SAMPLE_RADIUS;
+  const radius2 = radius * radius;
+  let column0 = Math.floor((x - radius - TEXEL_ORIGIN_X) / TEXEL_SIZE);
+  let column1 = Math.floor((x + radius - TEXEL_ORIGIN_X) / TEXEL_SIZE);
+  let row0 = Math.floor((y - radius - TEXEL_ORIGIN_Y) / TEXEL_SIZE);
+  let row1 = Math.floor((y + radius - TEXEL_ORIGIN_Y) / TEXEL_SIZE);
+  if (column0 < 0) column0 = 0;
+  if (row0 < 0) row0 = 0;
+  if (column1 >= TEXEL_COLUMNS) column1 = TEXEL_COLUMNS - 1;
+  if (row1 >= TEXEL_ROWS) row1 = TEXEL_ROWS - 1;
+  let weight = 0;
+  let sum = 0;
+  for (let row = row0; row <= row1; row += 1) {
+    const cy = TEXEL_ORIGIN_Y + (row + 0.5) * TEXEL_SIZE;
+    const dy = y - cy;
+    for (let column = column0; column <= column1; column += 1) {
+      const cx = TEXEL_ORIGIN_X + (column + 0.5) * TEXEL_SIZE;
+      const dx = x - cx;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 >= radius2) continue;
+      const t = 1 - Math.sqrt(dist2) / radius;
+      const w = t * t;
+      sum += w * values[row * TEXEL_COLUMNS + column];
+      weight += w;
+    }
+  }
+  return weight > 0 ? sum / weight : null;
+}
+
 const PRESENT_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aCorner;
@@ -946,6 +1003,7 @@ in vec2 vUv;
 uniform sampler2D uWorld;
 uniform vec2 uCamera;
 uniform vec2 uHalfView;
+uniform vec2 uScroll;
 uniform float uTime;
 uniform vec3 uHeat[48];
 uniform int uHeatCount;
@@ -983,7 +1041,8 @@ float heatMask(vec2 world, vec3 source) {
 
 void main() {
   ivec2 size = textureSize(uWorld, 0);
-  ivec2 texel = clamp(ivec2(vUv * vec2(size)), ivec2(0), size - 1);
+  vec2 uv = vUv + uScroll;
+  ivec2 texel = clamp(ivec2(floor(uv * vec2(size))), ivec2(0), size - 1);
   vec4 sharp = texelAt(texel, size);
   if (uHeatCount == 0) {
     fragColor = vec4(sharp.rgb, 1.0);
@@ -1010,7 +1069,7 @@ void main() {
   }
 
   shift = clamp(shift, vec2(-1.0), vec2(1.0)) * 0.055;
-  vec2 uv = vUv + shift / (uHalfView * 2.0);
+  uv += shift / (uHalfView * 2.0);
   vec2 pixel = 1.0 / vec2(size);
   vec4 center = sampleWorld(uv);
   vec4 blur = (
@@ -1079,6 +1138,8 @@ export class CellRenderer {
   private logicalWidth = LOGICAL_WIDTH;
   private logicalHeight = LOGICAL_HEIGHT;
   private camera: [number, number] | null = null;
+  /** Title pan slides by display pixels instead of whole logical pixels. */
+  private smoothCamera = false;
   private zoom = ZOOM_MIN;
   private zoomFloor = ZOOM_MIN;
   private frame: { halfView: [number, number]; camera: [number, number] } | null = null;
@@ -1090,6 +1151,12 @@ export class CellRenderer {
   private fieldOverlay: FieldOverlay | null = null;
   private showNutrients = false;
   private sunBrightness = 1;
+  /** Temperature and pressure blends are reused until the pointer moves a texel or this interval passes. */
+  private fieldProbeAt = 0;
+  private fieldProbeX = 0;
+  private fieldProbeY = 0;
+  private fieldProbeTemperature: number | null = null;
+  private fieldProbePressure = 0;
   private temperatureRevision = -1;
   private oxidexRevision = -1;
   private sulfexRevision = -1;
@@ -1243,6 +1310,15 @@ export class CellRenderer {
     this.camera = [x, y];
   }
 
+  /**
+   * When set, the world stays on the logical pixel grid and the presented
+   * picture scrolls by whole display pixels. A slow pan then does not sit
+   * still and lurch by the integer upscale.
+   */
+  setSmoothCamera(enabled: boolean): void {
+    this.smoothCamera = enabled;
+  }
+
   zoomBy(deltaY: number, deltaMode: number): void {
     let delta = deltaY;
     if (deltaMode === 1) delta *= 16;
@@ -1306,14 +1382,23 @@ export class CellRenderer {
     const pixelWorld = (halfView[0] * 2) / Math.max(this.logicalWidth, 1);
     const filamentHalf = 0.5 / view.pixels_per_unit;
     const pixel = view.pixels_per_unit;
+    const drawnPixelsPerUnit = this.logicalWidth / (halfView[0] * 2);
     const followed = this.followCamera(camera, dt);
+    const grid = this.smoothCamera ? drawnPixelsPerUnit : pixel;
     const snapped: [number, number] = [
-      Math.round(followed[0] * pixel) / pixel,
-      Math.round(followed[1] * pixel) / pixel,
+      Math.round(followed[0] * grid) / grid,
+      Math.round(followed[1] * grid) / grid,
     ];
-    this.frame = { halfView, camera: snapped };
+    const presented = this.presentCamera(followed, snapped, drawnPixelsPerUnit);
+    this.frame = { halfView, camera: presented.camera };
     this.plantInnerBorder();
-    this.temperatureField.advance(dt, this.sunBrightness, this.terrain.ventCenters(), this.terrain.rockTexels());
+    this.temperatureField.advance(
+      dt,
+      this.sunBrightness,
+      this.terrain.ventCenters(),
+      this.terrain.rockTexels(),
+      this.terrain.rockStamp(),
+    );
     this.oxidexField.advance(dt);
     this.sulfexField.advance(dt);
     this.syncTemperatureTexture();
@@ -1338,7 +1423,6 @@ export class CellRenderer {
     gl.disable(gl.BLEND);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    const drawnPixelsPerUnit = this.logicalWidth / (halfView[0] * 2);
     this.background.drawBehind(
       halfView,
       snapped,
@@ -1368,7 +1452,7 @@ export class CellRenderer {
     this.drawBodies(ordered, halfView, snapped, pixelWorld, light, intensity, lights);
     gl.disable(gl.DEPTH_TEST);
 
-    this.bubbles.sync(this.terrain.bubblePoints());
+    this.bubbles.sync(this.terrain.bubblePoints(), this.terrain.bubbleGeneration());
     this.bubbles.update(dt);
     this.bubbles.draw(halfView, snapped);
     this.decorations.draw("fore", halfView, snapped, intensity, lights, drawnPixelsPerUnit);
@@ -1384,10 +1468,11 @@ export class CellRenderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.worldTarget);
     this.heatTime = (this.heatTime + Math.min(dt, 0.05)) % 1000;
-    const heat = this.terrain.packHeat();
+    const heat = this.terrain.packHeat(viewBounds);
     gl.uniform1i(uniform(gl, this.presentProgram, "uWorld"), 0);
-    gl.uniform2f(uniform(gl, this.presentProgram, "uCamera"), snapped[0], snapped[1]);
+    gl.uniform2f(uniform(gl, this.presentProgram, "uCamera"), presented.camera[0], presented.camera[1]);
     gl.uniform2f(uniform(gl, this.presentProgram, "uHalfView"), halfView[0], halfView[1]);
+    gl.uniform2f(uniform(gl, this.presentProgram, "uScroll"), presented.scroll[0], presented.scroll[1]);
     gl.uniform1f(uniform(gl, this.presentProgram, "uTime"), this.heatTime);
     gl.uniform1i(uniform(gl, this.presentProgram, "uHeatCount"), heat.count);
     gl.uniform3fv(uniform(gl, this.presentProgram, "uHeat"), heat.data);
@@ -1397,9 +1482,34 @@ export class CellRenderer {
       (halfView[1] * 2) / Math.max(this.height, 1),
     );
     const ciliumHalf = Math.min(filamentHalf, screenPixel * 0.5);
-    for (const cell of ordered) this.appendCilia(cell, halfView, snapped, ciliumHalf, dt);
+    for (const cell of ordered) this.appendCilia(cell, halfView, presented.camera, ciliumHalf, dt);
     this.flushRibbon();
-    this.drawTemperatureLabels(halfView, snapped);
+    this.drawTemperatureLabels(halfView, presented.camera);
+  }
+
+  /**
+   * Logical-pixel render, then a whole-display-pixel slide so the picture
+   * matches the followed camera without crawling inside a texel.
+   */
+  private presentCamera(
+    followed: [number, number],
+    snapped: [number, number],
+    pixelsPerUnit: number,
+  ): { scroll: [number, number]; camera: [number, number] } {
+    if (!this.smoothCamera || pixelsPerUnit <= 0 || this.width <= 0 || this.height <= 0) {
+      return { scroll: [0, 0], camera: snapped };
+    }
+    const scaleX = this.width / Math.max(this.logicalWidth, 1);
+    const scaleY = this.height / Math.max(this.logicalHeight, 1);
+    const stepX = nearest((followed[0] - snapped[0]) * pixelsPerUnit * scaleX);
+    const stepY = nearest((followed[1] - snapped[1]) * pixelsPerUnit * scaleY);
+    return {
+      scroll: [stepX / this.width, stepY / this.height],
+      camera: [
+        snapped[0] + stepX / (scaleX * pixelsPerUnit),
+        snapped[1] + stepY / (scaleY * pixelsPerUnit),
+      ],
+    };
   }
 
   /** Along-wall motion kept while a body touches terrain. 1 is frictionless. */
@@ -1456,6 +1566,50 @@ export class CellRenderer {
 
   inspectFeatures(): TerrainFeature[] {
     return this.terrain.features();
+  }
+
+  /** Nutrient stain, oxidex, heat, pressure, sunlight, and UV at a world point. */
+  probeEnvironment(x: number, y: number): EnvironmentReading {
+    const texel = texelAt(x, y);
+    const cell = texel ? texel.row * TEXEL_COLUMNS + texel.column : -1;
+    const concentrations = this.nutrients.concentrations;
+    const column = this.columnSample(x, y);
+    return {
+      temperature: column.temperature,
+      pressure: column.pressure,
+      light: this.sunBrightness * columnAttenuation(y),
+      uv: this.sunBrightness * uvColumnAttenuation(y),
+      nutrients: [
+        { name: "Sulfex", amount: concentrations.read("sulfex", x, y) },
+        { name: "Ferron", amount: concentrations.read("ferron", x, y) },
+        { name: "Nitrox", amount: concentrations.read("nitrox", x, y) },
+        { name: "Osmolyn", amount: concentrations.read("osmolyn", x, y) },
+        { name: "Oxidex", amount: cell >= 0 ? this.oxidexField.values[cell] : 0 },
+      ],
+    };
+  }
+
+  /**
+   * Heat and pressure change per texel. Blend the centers within two texel widths
+   * so the tooltip eases across a border instead of stepping. The blend is skipped
+   * until the pointer has moved a texel or a tenth of a second has passed.
+   */
+  private columnSample(x: number, y: number): { temperature: number | null; pressure: number } {
+    const now = performance.now();
+    const dx = x - this.fieldProbeX;
+    const dy = y - this.fieldProbeY;
+    const due = now - this.fieldProbeAt >= 100;
+    const far = dx * dx + dy * dy > TEXEL_SIZE * TEXEL_SIZE;
+    if (this.fieldProbeAt !== 0 && !due && !far) {
+      return { temperature: this.fieldProbeTemperature, pressure: this.fieldProbePressure };
+    }
+    this.fieldProbeAt = now;
+    this.fieldProbeX = x;
+    this.fieldProbeY = y;
+    this.fieldProbeTemperature = sampleTexelField(this.temperatureField.values, x, y);
+    const pressure = sampleTexelField(this.pressureField.values, x, y);
+    this.fieldProbePressure = pressure ?? pressureAt(y);
+    return { temperature: this.fieldProbeTemperature, pressure: this.fieldProbePressure };
   }
 
   worldAt(clientX: number, clientY: number): [number, number] | null {
@@ -1581,16 +1735,25 @@ export class CellRenderer {
     dt: number,
   ): void {
     if (cell.flagella.length === 0) return;
+    // Each site beats at its own strength, so one driven tuft can whip beside
+    // flopping neighbours on the same cell.
+    const whipFrequencyOf = (filament: CellSnapshot["flagella"][number]): number => {
+      const activity = cell.activityBySite?.[filament.site] ?? cell.activity;
+      if (cell.motor === "idle" || activity <= 0.01) return 0;
+      return (cell.motor === "tumble" ? 3.5 : 12) * activity;
+    };
+    if (!this.cellOnScreen(cell, halfView, camera)) {
+      for (const filament of cell.flagella) this.advancePhase(filament.id, whipFrequencyOf(filament), dt);
+      return;
+    }
     const cos = Math.cos(cell.angle);
     const sin = Math.sin(cell.angle);
     const bend = cell.bend ?? 0;
-    const whipping = cell.motor !== "idle" && cell.activity > 0.01;
-    const whipFrequency = whipping ? (cell.motor === "tumble" ? 3.5 : 12) * cell.activity : 0;
-    const visible = this.cellOnScreen(cell, halfView, camera);
     const color = FLAGELLUM_COLORS[cell.palette] ?? FLAGELLUM_COLORS[0];
     const depth = this.flagellumDepth(cell.y);
     for (const filament of cell.flagella) {
       const drift = (filament.id % 50) * 1.7 + (filament.pole < 0 ? 0 : 2.4);
+      const whipFrequency = whipFrequencyOf(filament);
       const phase = this.advancePhase(filament.id, whipFrequency, dt) + drift;
       const anchor = flagellumSiteAnchor(cell.length, cell.width, bend, filament.site, filament.mount);
       const crystal = (cell.membraneStyle ?? this.membraneStyle) === 3;
@@ -1661,10 +1824,9 @@ export class CellRenderer {
       } else {
         flail = undefined;
       }
-      const target = whipping ? 1 : 0;
+      const target = whipFrequency > 0 ? 1 : 0;
       const blend = pose ? moveToward(pose.blend, target, dt / FLAGELLUM_BLEND_SECONDS) : target;
       this.filamentBlends.set(filament.id, { blend, chain, chainPhase, flail });
-      if (!visible) continue;
       if (cell.motor !== "tumble" && blend > 0) {
         whipCount = fillWhip(
           whipScratch,
@@ -1873,12 +2035,18 @@ export class CellRenderer {
       for (let index = 0; index < shown.length; index += 1) shown[index] += (target[index] - shown[index]) * blend;
     }
     const bytes = this.particleTemperatureBytes;
+    let changed = false;
     for (let index = 0; index < shown.length; index += 1) {
       const scaled = Math.round((shown[index] / 130) * 255);
       const byte = scaled < 0 ? 0 : scaled > 255 ? 255 : scaled;
-      bytes[index * 4] = byte;
-      bytes[index * 4 + 3] = 255;
+      const at = index * 4;
+      if (bytes[at] !== byte) {
+        bytes[at] = byte;
+        changed = true;
+      }
+      bytes[at + 3] = 255;
     }
+    if (!changed) return;
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.particleTemperatureTexture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -1969,10 +2137,7 @@ export class CellRenderer {
   private drawTemperatureLabels(halfView: [number, number], camera: [number, number]): void {
     const canvas = this.labels;
     const context = this.labelContext;
-    if (!this.fieldOverlay) {
-      canvas.classList.remove("on");
-      return;
-    }
+    if (!this.fieldOverlay) return;
     const rect = this.canvas.getBoundingClientRect();
     canvas.classList.add("on");
     canvas.style.left = `${rect.left}px`;
@@ -2244,6 +2409,11 @@ export class CellRenderer {
 function ciliumRandomPhase(x: number, y: number): number {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
   return (n - Math.floor(n)) * Math.PI * 2;
+}
+
+/** Round half away from zero, so a slow pan steps the same distance in both directions. */
+function nearest(value: number): number {
+  return Math.sign(value) * Math.floor(Math.abs(value) + 0.5);
 }
 
 function moveToward(current: number, target: number, amount: number): number {

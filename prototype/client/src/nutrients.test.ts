@@ -12,6 +12,7 @@ import {
   nutrientKind,
   paintNutrients,
   plumeAmount,
+  tailAmount,
   type NutrientFace,
 } from "./nutrients";
 
@@ -36,6 +37,11 @@ check(plumeAmount(0, PLUME_ACROSS) === 0, "the plume ends across the face");
 check(plumeAmount(PLUME_WATER * 0.5, 0) > 0 && plumeAmount(PLUME_WATER * 0.5, 0) < 0.4, "the water side fades before the edge");
 check(plumeAmount(-(PLUME_ROCK + 1), 0) === 0, "past the rock the plume is empty");
 check(plumeAmount(PLUME_ROCK + 2, 0) > 0, "the water side reaches farther than the rock side");
+check(tailAmount(0, 0) === 0.25, "the uncolored tail is fullest at the plume center");
+check(tailAmount(48, 0) > 0.035 && tailAmount(48, 0) < 0.05, "about 48 units out the tail is near 0.04");
+check(tailAmount(24, 0) > tailAmount(48, 0) && tailAmount(48, 0) > tailAmount(90, 0), "the tail falls off with distance");
+check(tailAmount(200, 0) === 0, "the tail ends instead of filling the whole column");
+check(tailAmount(-40, 0) < tailAmount(40, 0), "the tail reaches farther into open water than back into rock");
 
 function cell(values: Float32Array, x: number, y: number): [number, number, number, number] {
   const column = Math.floor((x - NUTRIENT_ORIGIN_X) / NUTRIENT_CELL);
@@ -105,15 +111,32 @@ for (let dy = -1; dy <= 4; dy += 1) {
   }
 }
 check(spot.value > 0.45, "a deposit charges clumps of water in front of it");
+const quiet = new Float32Array(NUTRIENT_COLUMNS * NUTRIENT_ROWS * 4);
+paintNutrients(quiet, [up]);
+check(cell(quiet, 1, 49)[0] === 0, "the colored plume does not reach the distant water");
+const distant = field.read("sulfex", 1, 49);
+const distantColumn = Math.floor((1 - NUTRIENT_ORIGIN_X) / NUTRIENT_CELL);
+const distantRow = Math.floor((49 - NUTRIENT_ORIGIN_Y) / NUTRIENT_CELL);
+const distantX = NUTRIENT_ORIGIN_X + (distantColumn + 0.5) * NUTRIENT_CELL;
+const distantY = NUTRIENT_ORIGIN_Y + (distantRow + 0.5) * NUTRIENT_CELL;
+check(Math.abs(distant - tailAmount(distantY - 1, distantX - 1)) < 1e-5, "distant water keeps the uncolored tail");
+check(distant > 0.03 && distant < 0.05, "hovering far from the stain still reads about 0.04");
+check(field.read("sulfex", 1, 30) > distant + 0.02, "the tail is stronger closer to the deposit");
+check(distant > field.read("sulfex", 1, 80) && field.read("sulfex", 1, 80) > 0, "the tail keeps a gradient past the colored plume");
+check(field.read("ferron", 1, 49) === 0, "a sulfex tail does not invent ferron");
+const walled = new NutrientConcentrations();
+walled.sources(1, [up], () => true);
+check(walled.read("sulfex", 1, 49) === 0, "the tail stays out of solid terrain");
 const request = Math.min(0.2, spot.value * 0.5);
 const taken = field.take("sulfex", spot.x, spot.y, request);
 const dipped = field.read("sulfex", spot.x, spot.y);
 check(Math.abs(taken - request) < 1e-5 && dipped < spot.value - request * 0.5, "taking nutrient lowers that cell");
 check(field.read("ferron", spot.x, spot.y) === 0, "taking sulfex leaves the other nutrients");
 check(Math.abs(field.take("sulfex", spot.x, spot.y, 10) - dipped) < 1e-5, "a cell cannot give more than it holds");
-check(field.read("sulfex", spot.x, spot.y) === 0, "the cell is empty after the rest is taken");
+const rested = field.read("sulfex", spot.x, spot.y);
+check(rested > 0.02 && rested < spot.value * 0.7, "draining the plume leaves the uncolored tail");
 for (let step = 0; step < 40; step += 1) field.advance(0.1);
-check(field.read("sulfex", spot.x, spot.y) > 0.05, "the deposit leaches concentration back into that cell");
+check(field.read("sulfex", spot.x, spot.y) > rested + 0.15, "the deposit leaches concentration back into that cell");
 
 const poured = field.add("nitrox", 40, 200, 0.8);
 const pouredAt = field.read("nitrox", 40, 200);
@@ -121,6 +144,8 @@ check(Math.abs(poured - 0.8) < 1e-5 && Math.abs(pouredAt - 0.8) < 1e-5, "adding 
 check(Math.abs(field.add("nitrox", 40, 200, 0.5) - 0.2) < 1e-5, "a cell stops at full concentration");
 for (let step = 0; step < 40; step += 1) field.advance(0.1);
 check(field.read("nitrox", 40, 200) < pouredAt * 0.55, "open water loses concentration the deposits do not supply");
+check(field.read("sulfex", 100, 400) === 0, "water far from a deposit stays empty");
+check(field.read("nitrox", -80, -400) === 0, "the far corner is not stirred just because a plume exists");
 
 if (failed > 0) throw new Error(`${failed} nutrient checks failed`);
 console.log("nutrient checks passed");

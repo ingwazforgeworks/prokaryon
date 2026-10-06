@@ -1,0 +1,186 @@
+GENE DATA STRUCTURE — backend record (not shown to players directly)
+=======================================================================
+One record per gene. Every gene in the catalog must be expressible by
+selecting values for these fields — no bespoke code per gene.
+Field order follows the Obsidian vault note format so a vault page can be
+transcribed into this record mechanically.
+
+--- 1. IDENTITY ---
+
+Gene Name
+  Unique display name. (e.g. "Flagellar Motor Protein")
+
+Gene Tag
+  Unique 4-character code; the gene id used everywhere.
+  (e.g. FLGM. Also derives the art file names.)
+
+Category
+  One of:
+    Metabolism | Homeostasis | Morphology | Motility | Perception |
+    Regulation | Reproduction
+  Drives genome viewer grouping and the category icon.
+
+Status
+  Proposed | Confirmed
+  Content pipeline state only; never shown in game.
+
+Function Description
+  Player-facing summary text, one or two sentences.
+
+--- 2. LOCALIZATION ---
+
+Destination Constraints
+  Route tags the protein accepts (multi-select):
+    Cytosol | Secreted | Transmembrane | Membrane-Anchored
+
+Position Constraints
+  Body-site tags the protein accepts (multi-select):
+    Any | Polar | Anti-Polar | Lateral | Anti-Lateral | Bi-Lateral | Bi-Polar
+
+Functional Position
+  The site the gene must occupy to have any effect at all.
+  (e.g. FLGN: Polar — an unpolarized filament produces no thrust, only drag.)
+  Blank = works anywhere it is allowed to sit.
+
+Default Localization
+  Where the protein goes when the player chooses no tag.
+
+--- 3. EFFECT ---
+
+Function Type (select exactly one archetype)
+  Importer            moves a dissolved environmental resource into the cell
+  Exporter            moves a resource or enzyme out; secreted enzymes keep
+                      acting on the environment after release
+  Converter           intracellular transformation of resources
+  Respiratory Module  changes ATP Synthase yield; needs an electron acceptor
+  Morphology Modifier changes a body stat
+  Motor               spends ATP on thrust
+  Buoyancy Modifier   changes vertical position in the water column
+  Sensor              turns an environmental variable into an internal signal
+  Regulator           changes another gene's expression or a behavior rule
+  Tolerance           resists, prevents, or repairs a stressor
+  Population          division, competence, conjugation, sporulation,
+                      plasmid upkeep, foreign-DNA defense
+  Emitter             produces light from chemical energy
+
+Inputs
+  Resources consumed, each with a rate:  <resource> @ <units/sec>
+  The gene's own ATP burn lives here unless it is uniform (see Economy).
+  An Importer's source resource is ambient; an Exporter's is internal.
+
+Outputs
+  Resources produced, each with a rate:  <resource> @ <units/sec>
+  Exporters also record visibility:
+    private — only the producer benefits (e.g. Capsulin)
+    public  — neighbors benefit too (public-goods exploits live here:
+              hydrolases, Siderin, Matrixin, Fermentate)
+
+Effect Parameters (filled in per Function Type)
+  Importer / Exporter / Converter
+      -> none beyond Inputs/Outputs
+  Respiratory Module
+      -> Acceptor: Oxidex | Sulfex | none
+         Yield multiplier on ATPS
+         Byproduct: oxidative damage | Fermentate | none
+  Morphology Modifier
+      -> Stat: length | width | bend | shape | capsule | envelope |
+                division-threshold | surface-adhesion | cell-adhesion
+         Magnitude (and sign)
+  Motor
+      -> Thrust power; scaling law is Saturating by design (spec §4.3)
+  Buoyancy Modifier
+      -> Vertical drift, signed (BALA down, BUOY/FLOA up)
+  Sensor
+      -> Sensed: light-intensity | light-direction | temperature | pH |
+                  osmolarity | oxidative-damage | quoron | redox |
+                  a specific chemical
+         Signal name the rest of the genome can read
+         (PHVC is the only directional sensor — keep it the exception)
+  Regulator
+      -> Target: gene tag or promoter
+         Effect: activate | repress | latch (memory) | behavior-rule
+  Tolerance
+      -> Stressor: acid | heat | cold | light | oxidative | osmotic |
+                   lyisin | DNA-damage
+         Effect: survive | repair | prevent
+         Active cost while the stressor is present
+  Population
+      -> Behavior: divide | uptake-DNA | conjugate | sporulate |
+                    maintain-plasmid | restrict-foreign-DNA
+  Emitter
+      -> Band: blue | green | yellow | red
+
+--- 4. ECONOMY ---
+
+Mutation Point Unlock Cost
+  MP spent to unlock the gene on the tech tree. Blank = not purchasable.
+
+Upkeep ATP Cost
+  ATP/sec at baseline expression while the cassette runs.
+  Multiplied by the amount level chosen on the cassette (micro..hyper).
+
+Assembly ATP Cost                    [open decision]
+  One-time ATP to synthesize the protein when the cassette is expressed,
+  distinct from running it. Keep this field only if one-time synthesis
+  costs are wanted in the economy.
+
+Expression Scaling
+  Linear | Saturating
+  How added copies or levels combine. Motility stays saturating.
+
+--- 5. RELATIONSHIPS (Gene Interactions, one line each, all optional) ---
+
+  requires: <tag | pigment | condition>
+      Hard prerequisite to function. (RXNC requires Chlorin.)
+  unlocked-by: <tag>
+      Tech tree parent.
+  unlocks: <tag>
+      Tech tree child.
+  modifies: <tag>
+      Changes another gene's numbers.
+      (SLFR and OXDR modify ATPS; keep gene-specific code out.)
+  regulates: <tag | promoter>
+      Regulator targets. (ACTX, REPX, MEML)
+  competes-with: <tag>
+      Shares an input pool. (ATPS vs RDCD share Fluxin.)
+
+--- 6. CONTENT PIPELINE ---
+
+Art Key
+  The gene's sprite key; protein art and 32px icon file names follow
+  the Gene Tag (proteins/individuals/<TAG>.png).
+
+Design Basis
+  Real-world analog plus source reference, for content review.
+  (e.g. "flagellar stator complex, source [B5]")
+
+=======================================================================
+EXAMPLE RECORD — FLGM (numbers in <> are balance values still to set)
+=======================================================================
+
+Gene Name: Flagellar Motor Protein
+Gene Tag: FLGM
+Category: Motility
+Status: Confirmed
+Function Description: The rotary motor and stator complex that spins a
+  flagellum, converting ATP directly into thrust. Motion is a continuous
+  expense.
+Destination Constraints: Membrane-Anchored
+Position Constraints: Any
+Functional Position: (blank)
+Default Localization: cell membrane, co-located with the flagellum
+Function Type: Motor
+Inputs: ATP @ <heaviest continuous drain in the game>
+Outputs: (none — thrust is not a pooled resource)
+Effect Parameters: thrust <power>, scaling saturating; drag, crowding and
+  interference cap useful motor count well below expression capacity
+Mutation Point Unlock Cost: 1
+Upkeep ATP Cost: <base>/sec, x amount level
+Assembly ATP Cost: (pending the one-time-cost decision)
+Expression Scaling: Saturating
+Gene Interactions:
+  requires: FLGN
+  unlocked-by: (tech tree parent, if any)
+  competes-with: growth and maintenance (shared ATP pool)
+Art Key: FLGM
+Design Basis: flagellar stator complex, source [B5]

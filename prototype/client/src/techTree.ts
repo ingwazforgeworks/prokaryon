@@ -1,13 +1,20 @@
 import { GENES, type GeneRecord } from "./genes";
+import { geneUnlockCost, isGeneUnlocked, isPartDefault, isPartUnlocked, missingPartRequirements, partRequirementsMet, partUnlockCost, regulatoryPartById, subscribeUnlocks, unlockGene, unlockPart } from "./geneUnlocks";
+import { mutationPointCount, onResources } from "./resources";
+import {
+  REGULATORY_CATEGORY_ORDER,
+  REGULATORY_EDGES as REGULATORY_PART_EDGES,
+  REGULATORY_PARTS,
+} from "./regulatoryParts";
 import { uiScale } from "./settings";
-import { createUiSound, playUiSound, UI_SELECT } from "./uiSound";
+import { playCue } from "./uiSound";
 
 const NODE_W = 56;
 const NODE_H = 64;
 const COL = 76;
 const ROW = 100;
 const GRID_ROW = 76;
-const ICON_URL = "/ui/genome_viewer/proteins/named/individuals_32x32";
+const ICON_URL = "/ui/genome_viewer/proteins/individuals_32x32";
 const GROUP_PAD_X = 16;
 const GROUP_PAD_TOP = 28;
 const GROUP_PAD_BOTTOM = 14;
@@ -42,6 +49,10 @@ type TechNode = {
   h?: number;
   groupKey?: string;
   label?: string;
+  /** Short text on the node card, when it differs from the entry name. */
+  card?: string;
+  /** Icon URL for non-gene nodes such as regulatory parts. */
+  iconUrl?: string;
   entry?: TechEntry;
 };
 
@@ -71,203 +82,23 @@ const ACCENT: Record<string, string> = {
   Regulation: "#b48ad4",
   Reproduction: "#d46a6a",
   Promoter: "#b48ad4",
+  Expression: "#3ec4c0",
+  Destination: "#e2a04a",
+  Position: "#e2d36a",
 };
 
-const EDGES: TechEdge[] = [
-  { from: "ATPS", to: "OXDR", kind: "unlocks" },
-  { from: "ATPS", to: "SLFR", kind: "unlocks" },
-  { from: "ATPS", to: "FLGN", kind: "required" },
-  { from: "ATPS", to: "FLGM", kind: "required" },
-  { from: "NITP", to: "NITA", kind: "unlocks" },
-  { from: "NITP", to: "CHLS", kind: "unlocks" },
-  { from: "NITP", to: "PHYS", kind: "unlocks" },
-  { from: "CHLS", to: "RXNC", kind: "unlocks" },
-  { from: "RHDS", to: "PHOR", kind: "unlocks" },
-  { from: "CRTS", to: "PHPR", kind: "unlocks" },
-  { from: "RHDS", to: "PCHR", kind: "unlocks" },
-  { from: "CRTS", to: "PCHR", kind: "unlocks" },
-  { from: "CHLS", to: "PCHR", kind: "unlocks" },
-  { from: "PHYS", to: "PCHR", kind: "unlocks" },
-  { from: "CHLS", to: "RFP", kind: "unlocks" },
-  { from: "PHYS", to: "GFP", kind: "unlocks" },
-  { from: "RHDS", to: "YFP", kind: "unlocks" },
-  { from: "CHLS", to: "BFP", kind: "unlocks" },
-  { from: "CRTS", to: "BFP", kind: "unlocks" },
-  { from: "CBXP", to: "GLYS", kind: "required" },
-  { from: "RDCD", to: "GLYS", kind: "unlocks" },
-  { from: "RXNC", to: "GLYS", kind: "unlocks" },
-  { from: "GRNS", to: "GRNH", kind: "unlocks" },
-  { from: "FLGN", to: "FLGM", kind: "unlocks" },
-  { from: "FLGM", to: "TAXR", kind: "required" },
-  { from: "PCHR", to: "TAXR", kind: "unlocks" },
-  { from: "CHMR", to: "TAXR", kind: "unlocks" },
-  { from: "THMR", to: "TAXR", kind: "unlocks" },
-  { from: "OSMR", to: "TAXR", kind: "unlocks" },
-  { from: "PRTR", to: "TAXR", kind: "unlocks" },
-  { from: "RDXN", to: "TAXR", kind: "unlocks" },
-  { from: "QURR", to: "TAXR", kind: "unlocks" },
-  { from: "DMGR", to: "TAXR", kind: "unlocks" },
-  { from: "PHVC", to: "TAXR", kind: "unlocks" },
-  { from: "HSP", to: "MSAT", kind: "unlocks" },
-  { from: "CSP", to: "MSAT", kind: "required" },
-  { from: "CSP", to: "MDES", kind: "unlocks" },
-  { from: "HSP", to: "MDES", kind: "required" },
-  { from: "HSP", to: "OXDT", kind: "unlocks" },
-  { from: "CSP", to: "OXDT", kind: "required" },
-  { from: "MSAT", to: "AQUP", kind: "unlocks" },
-  { from: "MDES", to: "AQUP", kind: "unlocks" },
-  { from: "MSAT", to: "PPMP", kind: "unlocks" },
-  { from: "MDES", to: "PPMP", kind: "unlocks" },
-  { from: "AQUP", to: "OSMS", kind: "unlocks" },
-  { from: "PPMP", to: "ACDT", kind: "unlocks" },
-  { from: "OXDT", to: "REPR", kind: "unlocks" },
-  { from: "REPR", to: "DEFN", kind: "unlocks" },
-  { from: "DEFN", to: "LYSR", kind: "unlocks" },
-  { from: "HSP", to: "PHPR", kind: "required" },
-  { from: "CSP", to: "PHPR", kind: "required" },
-  { from: "HSP", to: "SIDS", kind: "required" },
-  { from: "CSP", to: "SIDS", kind: "required" },
-  { from: "BUOY", to: "FLOA", kind: "unlocks" },
-  { from: "BUOY", to: "BALA", kind: "unlocks" },
-  { from: "REPX", to: "MEML", kind: "unlocks" },
-  { from: "CONJ", to: "PLSM", kind: "unlocks" },
-  { from: "COMP", to: "PLSM", kind: "unlocks" },
-];
+const EDGES: TechEdge[] = [];
 
 let requirementEdges: TechEdge[] = EDGES.map((edge) => ({ ...edge }));
 
 // col is the unlock generation, drawn downward. row is the sibling lane, drawn across.
-const TREE_GROUPS: { label: string; accent: string; nodes: { id: string; col: number; row: number }[] }[] = [
-  {
-    label: "Respiration",
-    accent: ACCENT.Metabolism,
-    nodes: [
-      { id: "ATPS", col: 0, row: 0.5 },
-      { id: "OXDR", col: 1, row: 0 },
-      { id: "SLFR", col: 1, row: 1 },
-    ],
-  },
-  {
-    label: "Nitrogen and chlorophyll",
-    accent: ACCENT.Metabolism,
-    nodes: [
-      { id: "NITP", col: 0, row: 1 },
-      { id: "NITA", col: 1, row: 0 },
-      { id: "CHLS", col: 1, row: 1 },
-      { id: "PHYS", col: 1, row: 2 },
-      { id: "RXNC", col: 2, row: 1 },
-    ],
-  },
-  {
-    label: "Pigments and light",
-    accent: ACCENT.Perception,
-    nodes: [
-      { id: "RHDS", col: 0, row: 0 },
-      { id: "CRTS", col: 0, row: 1 },
-      { id: "PHOR", col: 1, row: 0 },
-      { id: "PHPR", col: 1, row: 1 },
-      { id: "PCHR", col: 2, row: 0.5 },
-    ],
-  },
-  {
-    label: "Body pigments",
-    accent: ACCENT.Morphology,
-    nodes: [
-      { id: "RFP", col: 0, row: 0 },
-      { id: "GFP", col: 0, row: 1 },
-      { id: "YFP", col: 0, row: 2 },
-      { id: "BFP", col: 0, row: 3 },
-      { id: "SIDS", col: 0, row: 4 },
-    ],
-  },
-  {
-    label: "Homeostasis",
-    accent: ACCENT.Homeostasis,
-    nodes: [
-      { id: "HSP", col: 0, row: 0 },
-      { id: "CSP", col: 0, row: 2 },
-      { id: "MSAT", col: 1, row: 0 },
-      { id: "OXDT", col: 1, row: 1 },
-      { id: "MDES", col: 1, row: 2 },
-      { id: "AQUP", col: 2, row: 0 },
-      { id: "REPR", col: 2, row: 1 },
-      { id: "PPMP", col: 2, row: 2 },
-      { id: "OSMS", col: 3, row: 0 },
-      { id: "ACDT", col: 3, row: 2 },
-      { id: "DEFN", col: 4, row: 2 },
-      { id: "LYSR", col: 5, row: 2 },
-    ],
-  },
-  {
-    label: "Carbon fixation",
-    accent: ACCENT.Metabolism,
-    nodes: [
-      { id: "CBXP", col: 0, row: 0 },
-      { id: "RDCD", col: 0, row: 1 },
-      { id: "GLYS", col: 1, row: 0.5 },
-    ],
-  },
-  {
-    label: "Storage",
-    accent: ACCENT.Metabolism,
-    nodes: [
-      { id: "GRNS", col: 0, row: 0 },
-      { id: "GRNH", col: 1, row: 0 },
-    ],
-  },
-  {
-    label: "Motility",
-    accent: ACCENT.Motility,
-    nodes: [
-      { id: "FLGN", col: 0, row: 0 },
-      { id: "FLGM", col: 1, row: 0 },
-      { id: "CHMR", col: 1, row: 1 },
-      { id: "THMR", col: 1, row: 2 },
-      { id: "OSMR", col: 1, row: 3 },
-      { id: "PRTR", col: 1, row: 4 },
-      { id: "RDXN", col: 1, row: 5 },
-      { id: "QURR", col: 1, row: 6 },
-      { id: "DMGR", col: 1, row: 7 },
-      { id: "PHVC", col: 1, row: 8 },
-      { id: "TAXR", col: 2, row: 4 },
-    ],
-  },
-  {
-    label: "Buoyancy",
-    accent: ACCENT.Motility,
-    nodes: [
-      { id: "BUOY", col: 0, row: 0.5 },
-      { id: "FLOA", col: 1, row: 0 },
-      { id: "BALA", col: 1, row: 1 },
-    ],
-  },
-  {
-    label: "Regulation",
-    accent: ACCENT.Regulation,
-    nodes: [
-      { id: "REPX", col: 0, row: 0 },
-      { id: "MEML", col: 1, row: 0 },
-    ],
-  },
-  {
-    label: "Gene transfer",
-    accent: ACCENT.Reproduction,
-    nodes: [
-      { id: "CONJ", col: 0, row: 0 },
-      { id: "COMP", col: 0, row: 1 },
-      { id: "PLSM", col: 1, row: 0.5 },
-    ],
-  },
-];
+const TREE_GROUPS: { label: string; accent: string; nodes: { id: string; col: number; row: number }[] }[] = [];
 
 const LABEL_NODE_W = 148;
 const LABEL_NODE_H = 32;
 const LABEL_ROW = 76;
 
-const REGULATORY_EDGES: TechEdge[] = [
-  { from: "CNST", to: "COND", kind: "unlocks" },
-  { from: "COND", to: "OPTG", kind: "unlocks" },
-];
+const REGULATORY_EDGES = REGULATORY_PART_EDGES;
 
 type TechLayout = {
   worldW: number;
@@ -346,6 +177,8 @@ async function mountTechTree(): Promise<void> {
   }
 
   const arrangeButton = document.querySelector<HTMLButtonElement>("#tech-arrange");
+  const functionalCategoryTabs = document.querySelector<HTMLElement>("#tech-categories-functional");
+  const regulatoryCategoryTabs = document.querySelector<HTMLElement>("#tech-categories-regulatory");
   const saveLayoutButton = document.querySelector<HTMLButtonElement>("#tech-layout-save");
   const renameButton = document.querySelector<HTMLButtonElement>("#tech-rename");
   const deleteButton = document.querySelector<HTMLButtonElement>("#tech-delete");
@@ -356,23 +189,26 @@ async function mountTechTree(): Promise<void> {
   const nameInput = document.querySelector<HTMLInputElement>("#tech-edit-name");
   const selectionNote = document.querySelector<HTMLElement>("#tech-selection");
   const layoutStatus = document.querySelector<HTMLElement>("#tech-layout-status");
-  if (!arrangeButton || !saveLayoutButton || !renameButton || !deleteButton || !newCategoryButton || !newNodeButton || !unlockLineButton || !requiredLineButton || !nameInput || !selectionNote || !layoutStatus) {
-    throw new Error("missing tech tree layout controls");
-  }
+  const setLayoutStatus = (text: string): void => {
+    if (layoutStatus) layoutStatus.textContent = text;
+  };
 
-  const clickSound = createUiSound(UI_SELECT);
   const genesById = new Map(GENES.map((gene) => [gene.id, gene]));
   const savedLayout = await loadTechLayout();
   let functionalLayout = buildTechLayout(genesById);
   let regulatoryLayout = buildRegulatoryLayout();
-  let regulatoryEdges = REGULATORY_EDGES.map((edge) => ({ ...edge }));
+  let regulatoryEdges: TechEdge[] = REGULATORY_EDGES.map((edge) => ({ ...edge }));
   if (savedLayout?.v === 2) {
     const functionalSaved = layoutFromSaved(savedLayout.functional, genesById);
     const regulatorySaved = layoutFromSaved(savedLayout.regulatory, genesById);
     functionalLayout = functionalSaved.layout;
-    regulatoryLayout = regulatorySaved.layout;
     requirementEdges = functionalSaved.edges;
-    regulatoryEdges = regulatorySaved.edges;
+    // A saved regulatory tree only wins when it actually has nodes; the saved
+    // file predating the regulatory tree stores an empty board.
+    if (regulatorySaved.layout.nodes.length > 0) {
+      regulatoryLayout = regulatorySaved.layout;
+      regulatoryEdges = regulatorySaved.edges;
+    }
   } else if (savedLayout?.v === 1) {
     applySavedLayout(functionalLayout, savedLayout.functional);
     applySavedLayout(regulatoryLayout, savedLayout.regulatory);
@@ -383,8 +219,8 @@ async function mountTechTree(): Promise<void> {
     viewportLabel: "Functional tech tree",
   });
   const regulatory = boardFrom(regulatoryWorld, regulatoryTab, regulatoryLayout, regulatoryEdges, genesById, {
-    emptyText: "Select a promoter",
-    detailLabel: "Promoter information",
+    emptyText: "Select a regulatory element",
+    detailLabel: "Regulatory element information",
     viewportLabel: "Regulatory tech tree",
   });
   const boards = [functional, regulatory];
@@ -394,6 +230,85 @@ async function mountTechTree(): Promise<void> {
   let lineMode: EdgeKind | null = null;
   let lineFrom: string | null = null;
   let drag: MoveDrag | null = null;
+
+  // Category tabs: only one category fills a board at a time. The functional
+  // board slices by gene category, the regulatory board by part category.
+  let functionalCategory = "Motility";
+  let regulatoryCategory: string = REGULATORY_CATEGORY_ORDER[0];
+
+  const categoryOfNode = (board: TreeBoard, node: TechNode): string =>
+    board === regulatory
+      ? node.entry?.category ?? ""
+      : genesById.get(node.geneId ?? "")?.category ?? node.entry?.category ?? "";
+
+  const categoryOf = (board: TreeBoard): string => (board === regulatory ? regulatoryCategory : functionalCategory);
+
+  const setCategoryOf = (board: TreeBoard, category: string): void => {
+    if (board === regulatory) regulatoryCategory = category;
+    else functionalCategory = category;
+  };
+
+  const categoryTabsOf = (board: TreeBoard): HTMLElement | null =>
+    board === regulatory ? regulatoryCategoryTabs : functionalCategoryTabs;
+
+  const syncCategoryTabs = (board: TreeBoard): void => {
+    const tabs = categoryTabsOf(board);
+    if (!tabs) return;
+    const category = categoryOf(board);
+    tabs.querySelectorAll<HTMLButtonElement>(".tech-mode").forEach((button) => {
+      button.setAttribute("aria-selected", button.dataset.category === category ? "true" : "false");
+    });
+  };
+
+  const applyCategoryFilter = (board: TreeBoard): void => {
+    const category = categoryOf(board);
+    for (const node of board.byNode.values()) {
+      const button = board.buttons.get(node.id);
+      if (button) button.hidden = categoryOfNode(board, node) !== category;
+    }
+    for (const group of board.groups) {
+      group.el.hidden = !group.nodeIds.some((id) => {
+        const node = board.byNode.get(id);
+        return node !== undefined && categoryOfNode(board, node) === category;
+      });
+    }
+    for (const path of board.paths) {
+      const from = board.byNode.get(path.dataset.from ?? "");
+      const to = board.byNode.get(path.dataset.to ?? "");
+      const visible =
+        from !== undefined &&
+        to !== undefined &&
+        categoryOfNode(board, from) === category &&
+        categoryOfNode(board, to) === category;
+      // SVG paths have no hidden attribute; display is the reliable switch.
+      path.style.display = visible ? "" : "none";
+    }
+    const selected = board.selectedId ? board.byNode.get(board.selectedId) : undefined;
+    if (selected && categoryOfNode(board, selected) !== category) {
+      board.buttons.get(selected.id)?.setAttribute("aria-pressed", "false");
+      board.selectedId = null;
+      for (const path of board.paths) path.classList.remove("is-lit");
+      showEmpty(board);
+    }
+  };
+
+  const focusCategory = (board: TreeBoard): void => {
+    const group = board.groups.find((item) => !item.el.hidden);
+    if (!group) return;
+    const rect = viewport.getBoundingClientRect();
+    const scale = uiScale();
+    const x = parseFloat(group.el.style.left) || 0;
+    const y = parseFloat(group.el.style.top) || 0;
+    const w = parseFloat(group.el.style.width) || group.w;
+    const h = parseFloat(group.el.style.height) || group.h;
+    board.camScale = Math.min(
+      MAX_SCALE,
+      Math.max(MIN_SCALE, Math.min((rect.width / scale - 48) / w, (rect.height / scale - 48) / h)),
+    );
+    board.camX = rect.width / scale / 2 - (x + w / 2) * board.camScale;
+    board.camY = rect.height / scale / 2 - (y + h / 2) * board.camScale;
+    applyCamera();
+  };
 
   const applyCamera = (): void => {
     active.world.style.transform = `translate(${active.camX}px, ${active.camY}px) scale(${active.camScale})`;
@@ -439,6 +354,7 @@ async function mountTechTree(): Promise<void> {
     const incoming = board.edges.filter((edge) => edge.to === node.id);
     const outgoing = board.edges.filter((edge) => edge.from === node.id);
     const blocks: HTMLElement[] = [name, meta, copy];
+    blocks.push(unlockBlock(node));
     if (incoming.length > 0 || outgoing.length > 0) {
       blocks.push(relationBlock("Prerequisites", incoming, "from", board.names));
       blocks.push(relationBlock("Unlocks", outgoing, "to", board.names));
@@ -457,6 +373,10 @@ async function mountTechTree(): Promise<void> {
     for (const other of boards) other.tab.setAttribute("aria-selected", other === board ? "true" : "false");
     active = board;
     viewport.setAttribute("aria-label", board.viewportLabel);
+    if (functionalCategoryTabs) functionalCategoryTabs.hidden = board !== functional;
+    if (regulatoryCategoryTabs) regulatoryCategoryTabs.hidden = board !== regulatory;
+    syncCategoryTabs(board);
+    applyCategoryFilter(board);
     applyCamera();
     if (board.selectedId) {
       const node = board.byNode.get(board.selectedId);
@@ -469,24 +389,25 @@ async function mountTechTree(): Promise<void> {
       showEmpty(board);
     }
     refreshSelection();
+    focusCategory(board);
   };
 
   const refreshSelection = (): void => {
     if (active.selectedId) {
       const node = active.byNode.get(active.selectedId);
       const title = node ? nodeTitle(node, genesById) : active.selectedId;
-      selectionNote.textContent = `Node: ${title}`;
-      if (document.activeElement !== nameInput && node) nameInput.value = nodeCard(node, genesById);
+      if (selectionNote) selectionNote.textContent = `Node: ${title}`;
+      if (nameInput && document.activeElement !== nameInput && node) nameInput.value = nodeCard(node, genesById);
       return;
     }
     if (active.selectedGroupKey) {
       const group = active.groups.find((item) => item.key === active.selectedGroupKey);
       const label = group?.el.querySelector(".tech-group-label")?.textContent ?? "Category";
-      selectionNote.textContent = `Category: ${label}`;
-      if (document.activeElement !== nameInput) nameInput.value = label;
+      if (selectionNote) selectionNote.textContent = `Category: ${label}`;
+      if (nameInput && document.activeElement !== nameInput) nameInput.value = label;
       return;
     }
-    selectionNote.textContent = "Nothing selected";
+    if (selectionNote) selectionNote.textContent = "Nothing selected";
   };
 
   const clearGroupSelection = (board: TreeBoard): void => {
@@ -494,7 +415,7 @@ async function mountTechTree(): Promise<void> {
     for (const group of board.groups) group.el.classList.remove("is-selected");
   };
 
-  const selectNode = (id: string): void => {
+  const selectNode = (id: string, quiet = false): void => {
     const node = active.byNode.get(id);
     const button = active.buttons.get(id);
     if (!node || !button) return;
@@ -507,7 +428,7 @@ async function mountTechTree(): Promise<void> {
     }
     showDetail(active, node);
     refreshSelection();
-    playUiSound(clickSound);
+    if (!quiet) playCue("select");
   };
 
   const selectGroup = (key: string, quiet = false): void => {
@@ -531,32 +452,51 @@ async function mountTechTree(): Promise<void> {
     copy.textContent = `${group.nodeIds.length} nodes`;
     detail.replaceChildren(name, meta, copy);
     refreshSelection();
-    if (!quiet) playUiSound(clickSound);
+    if (!quiet) playCue("select");
   };
 
   functionalTab.addEventListener("click", () => {
     if (active === functional) return;
     showTree(functional);
-    playUiSound(clickSound);
+    playCue("tab");
   });
   regulatoryTab.addEventListener("click", () => {
     if (active === regulatory) return;
     showTree(regulatory);
-    playUiSound(clickSound);
+    playCue("tab");
   });
-  arrangeButton.addEventListener("click", () => {
-    arranging = !arranging;
-    arrangeButton.classList.toggle("active", arranging);
-    arrangeButton.setAttribute("aria-pressed", String(arranging));
-    viewport.classList.toggle("is-arranging", arranging);
-    layoutStatus.textContent = arranging ? "Drag nodes and categories" : "";
-    playUiSound(clickSound);
-  });
-  saveLayoutButton.addEventListener("click", () => {
-    layoutStatus.textContent = "Saving…";
-    playUiSound(clickSound);
+  const wireCategoryTabs = (board: TreeBoard, tabs: HTMLElement | null): void => {
+    if (!tabs) return;
+    tabs.querySelectorAll<HTMLButtonElement>(".tech-mode").forEach((button) => {
+      button.addEventListener("click", () => {
+        const category = button.dataset.category;
+        if (!category || category === categoryOf(board) || active !== board) return;
+        setCategoryOf(board, category);
+        syncCategoryTabs(board);
+        applyCategoryFilter(board);
+        focusCategory(board);
+        playCue("tab");
+      });
+    });
+  };
+  wireCategoryTabs(functional, functionalCategoryTabs);
+  wireCategoryTabs(regulatory, regulatoryCategoryTabs);
+  if (arrangeButton) {
+    arrangeButton.addEventListener("click", () => {
+      arranging = !arranging;
+      arrangeButton.classList.toggle("active", arranging);
+      arrangeButton.setAttribute("aria-pressed", String(arranging));
+      viewport.classList.toggle("is-arranging", arranging);
+      setLayoutStatus(arranging ? "Drag nodes and categories" : "");
+      playCue("toggle");
+    });
+  }
+  saveLayoutButton?.addEventListener("click", () => {
+    setLayoutStatus("Saving…");
+    playCue("button");
     void saveTechLayout(functional, regulatory).then((ok) => {
-      layoutStatus.textContent = ok ? "Saved" : "Save failed";
+      setLayoutStatus(ok ? "Saved" : "Save failed");
+      playCue(ok ? "confirm" : "alarm");
     });
   });
 
@@ -570,12 +510,12 @@ async function mountTechTree(): Promise<void> {
   const setLineMode = (kind: EdgeKind): void => {
     lineMode = lineMode === kind ? null : kind;
     clearLineSource();
-    unlockLineButton.classList.toggle("active", lineMode === "unlocks");
-    requiredLineButton.classList.toggle("active", lineMode === "required");
-    unlockLineButton.setAttribute("aria-pressed", String(lineMode === "unlocks"));
-    requiredLineButton.setAttribute("aria-pressed", String(lineMode === "required"));
-    layoutStatus.textContent = lineMode ? "Click the parent node, then the child" : "";
-    playUiSound(clickSound);
+    unlockLineButton?.classList.toggle("active", lineMode === "unlocks");
+    requiredLineButton?.classList.toggle("active", lineMode === "required");
+    unlockLineButton?.setAttribute("aria-pressed", String(lineMode === "unlocks"));
+    requiredLineButton?.setAttribute("aria-pressed", String(lineMode === "required"));
+    setLayoutStatus(lineMode ? "Click the parent node, then the child" : "");
+    playCue("toggle");
   };
 
   const pickLine = (id: string): void => {
@@ -586,88 +526,99 @@ async function mountTechTree(): Promise<void> {
       lineFrom = id;
       button.classList.add("is-line-source");
       selectNode(id);
-      layoutStatus.textContent = "Parent set. Click the child node";
+      setLayoutStatus("Parent set. Click the child node");
       return;
     }
     if (lineFrom === id) {
       clearLineSource();
-      layoutStatus.textContent = "Click the parent node, then the child";
+      setLayoutStatus("Click the parent node, then the child");
+      playCue("deny");
       return;
     }
     const result = setEdge(active, lineFrom, id, lineMode);
     clearLineSource();
-    selectNode(id);
-    layoutStatus.textContent =
-      result === "added" ? "Line added" : result === "updated" ? "Line changed" : result === "removed" ? "Line removed" : "Choose two different nodes";
+    selectNode(id, true);
+    setLayoutStatus(
+      result === "added" ? "Line added" : result === "updated" ? "Line changed" : result === "removed" ? "Line removed" : "Choose two different nodes",
+    );
+    playCue(result === "added" || result === "updated" ? "success" : result === "removed" ? "close" : "deny");
   };
 
-  const editedName = (): string => nameInput.value.trim();
+  const editedName = (): string => nameInput?.value.trim() ?? "";
 
-  renameButton.addEventListener("click", () => {
+  renameButton?.addEventListener("click", () => {
     const name = editedName();
     if (!name) {
-      layoutStatus.textContent = "Enter a name";
+      setLayoutStatus("Enter a name");
+      playCue("deny");
       return;
     }
     if (active.selectedId) {
       renameNode(active, genesById, active.selectedId, name);
       if (active.selectedId) showDetail(active, active.byNode.get(active.selectedId)!);
       refreshSelection();
-      layoutStatus.textContent = "Renamed node";
+      setLayoutStatus("Renamed node");
     } else if (active.selectedGroupKey) {
       renameGroup(active, active.selectedGroupKey, name);
       selectGroup(active.selectedGroupKey, true);
-      layoutStatus.textContent = "Renamed category";
+      setLayoutStatus("Renamed category");
     } else {
-      layoutStatus.textContent = "Select a category or node";
+      setLayoutStatus("Select a category or node");
+      playCue("deny");
       return;
     }
-    playUiSound(clickSound);
+    playCue("select");
   });
-  deleteButton.addEventListener("click", () => {
+  deleteButton?.addEventListener("click", () => {
     if (active.selectedId) {
       const id = active.selectedId;
       deleteNode(active, id);
       showEmpty(active);
       refreshSelection();
-      layoutStatus.textContent = "Deleted node";
+      setLayoutStatus("Deleted node");
     } else if (active.selectedGroupKey) {
       deleteGroup(active, active.selectedGroupKey);
       showEmpty(active);
       refreshSelection();
-      layoutStatus.textContent = "Deleted category";
+      setLayoutStatus("Deleted category");
     } else {
-      layoutStatus.textContent = "Select a category or node";
+      setLayoutStatus("Select a category or node");
+      playCue("deny");
       return;
     }
-    playUiSound(clickSound);
+    playCue("close");
   });
-  newCategoryButton.addEventListener("click", () => {
+  newCategoryButton?.addEventListener("click", () => {
     const name = editedName();
     if (!name) {
-      layoutStatus.textContent = "Enter a name";
+      setLayoutStatus("Enter a name");
+      playCue("deny");
       return;
     }
     const key = createCategory(active, viewport, name);
-    selectGroup(key);
-    layoutStatus.textContent = "Category created";
+    selectGroup(key, true);
+    setLayoutStatus("Category created");
+    playCue("success");
   });
-  newNodeButton.addEventListener("click", () => {
+  newNodeButton?.addEventListener("click", () => {
     const name = editedName();
     if (!name) {
-      layoutStatus.textContent = "Enter a name";
+      setLayoutStatus("Enter a name");
+      playCue("deny");
       return;
     }
     const created = createNode(active, genesById, viewport, name);
     if (!created) {
-      layoutStatus.textContent = `${name} is already on this tree`;
+      setLayoutStatus(`${name} is already on this tree`);
+      playCue("deny");
       return;
     }
-    selectNode(created);
-    layoutStatus.textContent = "Node created";
+    selectNode(created, true);
+    setLayoutStatus("Node created");
+    playCue("success");
   });
-  unlockLineButton.addEventListener("click", () => setLineMode("unlocks"));
-  requiredLineButton.addEventListener("click", () => setLineMode("required"));
+  unlockLineButton?.addEventListener("click", () => setLineMode("unlocks"));
+  requiredLineButton?.addEventListener("click", () => setLineMode("required"));
 
   viewport.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
@@ -767,12 +718,12 @@ async function mountTechTree(): Promise<void> {
   zoomOut.addEventListener("click", () => {
     const rect = viewport.getBoundingClientRect();
     zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, active.camScale / 1.18);
-    playUiSound(clickSound);
+    playCue("step");
   });
   zoomIn.addEventListener("click", () => {
     const rect = viewport.getBoundingClientRect();
     zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, active.camScale * 1.18);
-    playUiSound(clickSound);
+    playCue("step");
   });
 
   const fit = (): void => {
@@ -785,7 +736,39 @@ async function mountTechTree(): Promise<void> {
     fitted = true;
   };
 
+  const syncUnlockStyles = (): void => {
+    for (const board of boards) {
+      for (const [id, button] of board.buttons) {
+        const node = board.byNode.get(id);
+        if (node?.geneId) button.classList.toggle("is-unlocked", isGeneUnlocked(node.geneId));
+        else if (node && regulatoryPartById(node.id)) button.classList.toggle("is-unlocked", isPartUnlocked(node.id));
+      }
+    }
+  };
+  const showSelectedDetail = (): void => {
+    const id = active.selectedId;
+    const node = id ? active.byNode.get(id) : undefined;
+    if (node) showDetail(active, node);
+  };
+  subscribeUnlocks(() => {
+    syncUnlockStyles();
+    showSelectedDetail();
+  });
+  let lastMutationPoints = mutationPointCount();
+  onResources(() => {
+    const current = mutationPointCount();
+    if (current === lastMutationPoints) return;
+    lastMutationPoints = current;
+    const id = active.selectedId;
+    const node = id ? active.byNode.get(id) : undefined;
+    const geneStale = node?.geneId && !isGeneUnlocked(node.geneId) && geneUnlockCost(node.geneId) !== null;
+    const partStale = node && !node.geneId && regulatoryPartById(node.id) && !isPartUnlocked(node.id);
+    if (geneStale || partStale) showSelectedDetail();
+  });
+
   viewport.setAttribute("aria-label", functional.viewportLabel);
+  syncCategoryTabs(functional);
+  applyCategoryFilter(functional);
   applyCamera();
   new MutationObserver(fit).observe(viewer, { attributes: true, attributeFilter: ["hidden"] });
   fit();
@@ -889,10 +872,11 @@ function mountWorld(
     const card = nodeCard(node, genesById);
     const code = gene?.id ?? entry?.code ?? node.id;
     const category = gene?.category ?? entry?.category ?? "";
+    const isPartNode = !gene && regulatoryPartById(node.id) !== undefined;
     names.set(node.id, title);
     const button = document.createElement("button");
     button.type = "button";
-    button.className = gene ? "tech-node" : "tech-node is-label";
+    button.className = gene || isPartNode ? "tech-node" : "tech-node is-label";
     button.dataset.nodeId = node.id;
     button.draggable = false;
     button.style.left = `${node.x}px`;
@@ -903,10 +887,19 @@ function mountWorld(
     button.setAttribute("aria-pressed", "false");
     button.title = title;
     button.setAttribute("aria-label", gene || entry ? `${title} (${code})` : "Unassigned node");
+    if (gene && isGeneUnlocked(gene.id)) button.classList.add("is-unlocked");
+    else if (isPartNode && isPartUnlocked(node.id)) button.classList.add("is-unlocked");
     if (gene) {
       const icon = document.createElement("img");
       icon.className = "tech-node-icon";
       icon.src = `${ICON_URL}/${gene.id}.png`;
+      icon.alt = "";
+      icon.draggable = false;
+      button.append(icon);
+    } else if (node.iconUrl) {
+      const icon = document.createElement("img");
+      icon.className = "tech-node-icon";
+      icon.src = node.iconUrl;
       icon.alt = "";
       icon.draggable = false;
       button.append(icon);
@@ -969,117 +962,64 @@ function buildTechLayout(genesById: Map<string, GeneRecord>): {
     rowBottom = Math.max(rowBottom, box.y + box.h);
   }
 
-  const freeBands: { category: string; ids: string[] }[] = [];
-  for (const gene of GENES) {
-    if (seen.has(gene.id)) continue;
-    const band = freeBands[freeBands.length - 1];
-    if (!band || band.category !== gene.category) freeBands.push({ category: gene.category, ids: [gene.id] });
-    else band.ids.push(gene.id);
-  }
-  let freeX = 28;
-  let freeBottom = rowBottom;
-  if (freeBands.length > 0) {
-    const freeTop = rowBottom + GROUP_GAP;
-    labels.push({ key: "label:Independently available", text: "Independently available", x: 28, y: freeTop });
-    const bandTop = freeTop + LABEL_H + 8;
-    for (const [bandIndex, band] of freeBands.entries()) {
-      const lanes = Math.ceil(band.ids.length / FREE_ROWS);
-      const rows = Math.min(FREE_ROWS, band.ids.length);
-      const box: TechGroup = {
-        key: `free:${bandIndex}:${band.category}`,
-        label: band.category,
-        accent: ACCENT[band.category] ?? "#8aa4a2",
-        x: freeX,
-        y: bandTop,
-        w: GROUP_PAD_X + lanes * NODE_W + Math.max(0, lanes - 1) * (COL - NODE_W) + GROUP_PAD_X,
-        h: GROUP_PAD_TOP + rows * GRID_ROW - (GRID_ROW - NODE_H) + GROUP_PAD_BOTTOM,
-      };
-      groups.push(box);
-      band.ids.forEach((id, index) => {
-        const lane = Math.floor(index / FREE_ROWS);
-        const row = index % FREE_ROWS;
-        nodes.push({
-          id,
-          geneId: id,
-          groupKey: box.key,
-          x: box.x + GROUP_PAD_X + lane * COL,
-          y: box.y + GROUP_PAD_TOP + row * GRID_ROW,
-        });
-        seen.add(id);
-      });
-      freeX += box.w + GROUP_GAP;
-      freeBottom = Math.max(freeBottom, box.y + box.h);
-    }
-  }
-
-  const worldW = Math.max(cursorX, freeX) - GROUP_GAP;
-  const cursorY = freeBottom;
-
   for (const edge of EDGES) {
     if (!seen.has(edge.from) || !seen.has(edge.to)) throw new Error(`tech tree edge ${edge.from}->${edge.to} is missing a node`);
   }
-  if (seen.size !== GENES.length) throw new Error(`tech tree prepared ${seen.size} of ${GENES.length} genes`);
 
-  return { worldW: worldW + 28, worldH: cursorY + 28, groups, nodes, labels };
+  return { worldW: Math.max(640, cursorX + 28), worldH: Math.max(480, rowBottom + 28), groups, nodes, labels };
 }
 
 function buildRegulatoryLayout(): TechLayout {
-  const parts: { id: string; name: string; description: string; col: number }[] = [
-    {
-      id: "CNST",
-      name: "Always On",
-      description: "Drives downstream genes at a fixed strength, all the time. This is the starter promoter, and it works before the cell has any receptor.",
-      col: 0,
-    },
-    {
-      id: "COND",
-      name: "Conditional",
-      description: "Drives downstream genes when a condition on receptor inputs is met. A condition can only read a quantity some receptor in the genome actually measures.",
-      col: 1,
-    },
-    {
-      id: "OPTG",
-      name: "Operator Tag",
-      description: "A label on a promoter that a repressor or activator can bind. One regulator can then address every promoter carrying the matching tag.",
-      col: 2,
-    },
-  ];
-  const bottom = (parts.length - 1) * LABEL_ROW + LABEL_NODE_H;
-  const box: TechGroup = {
-    key: "tree:Promoters",
-    label: "Promoters",
-    accent: ACCENT.Promoter,
-    x: 28,
-    y: 28,
-    w: GROUP_PAD_X + LABEL_NODE_W + GROUP_PAD_X,
-    h: GROUP_PAD_TOP + bottom + GROUP_PAD_BOTTOM,
-  };
-  const nodes: TechNode[] = parts.map((part) => ({
-    id: part.id,
-    geneId: null,
-    groupKey: box.key,
-    x: box.x + GROUP_PAD_X,
-    y: box.y + GROUP_PAD_TOP + part.col * LABEL_ROW,
-    w: LABEL_NODE_W,
-    h: LABEL_NODE_H,
-    entry: {
-      name: part.name,
-      category: "Promoter",
-      description: part.description,
-      code: part.id,
-    },
-  }));
-  const ids = new Set(nodes.map((node) => node.id));
-  for (const edge of REGULATORY_EDGES) {
-    if (!ids.has(edge.from) || !ids.has(edge.to)) throw new Error(`regulatory edge ${edge.from}->${edge.to} is missing a node`);
+  const groups: TechGroup[] = [];
+  const nodes: TechNode[] = [];
+  const labels: TechLabel[] = [];
+  const seen = new Set<string>();
+  let cursorX = 28;
+  let rowBottom = 28;
+
+  for (const category of REGULATORY_CATEGORY_ORDER) {
+    const parts = REGULATORY_PARTS.filter((part) => part.category === category);
+    let right = 0;
+    let bottom = 0;
+    for (const part of parts) {
+      if (seen.has(part.id)) throw new Error(`duplicate regulatory node ${part.id}`);
+      seen.add(part.id);
+      right = Math.max(right, part.row * COL + NODE_W);
+      bottom = Math.max(bottom, part.col * ROW + NODE_H);
+    }
+    const box: TechGroup = {
+      key: `reg:${category}`,
+      label: category,
+      accent: ACCENT[category] ?? "#8aa4a2",
+      x: cursorX,
+      y: 28,
+      w: GROUP_PAD_X + right + GROUP_PAD_X,
+      h: GROUP_PAD_TOP + bottom + GROUP_PAD_BOTTOM,
+    };
+    groups.push(box);
+    for (const part of parts) {
+      nodes.push({
+        id: part.id,
+        geneId: null,
+        groupKey: box.key,
+        x: box.x + GROUP_PAD_X + part.row * COL,
+        y: box.y + GROUP_PAD_TOP + part.col * ROW,
+        w: NODE_W,
+        h: NODE_H,
+        card: part.code,
+        iconUrl: part.icon,
+        entry: { name: part.name, category, description: part.description, code: part.code },
+      });
+    }
+    cursorX += box.w + GROUP_GAP;
+    rowBottom = Math.max(rowBottom, box.y + box.h);
   }
-  return {
-    worldW: box.x + box.w + 28,
-    worldH: box.y + box.h + 28,
-    groups: [box],
-    nodes,
-    labels: [],
-  };
+
+  for (const edge of REGULATORY_EDGES) {
+    if (!seen.has(edge.from) || !seen.has(edge.to)) throw new Error(`regulatory edge ${edge.from}->${edge.to} is missing a node`);
+  }
+
+  return { worldW: Math.max(640, cursorX + 28), worldH: Math.max(480, rowBottom + 28), groups, nodes, labels };
 }
 
 function moveNode(board: TreeBoard, id: string, x: number, y: number): void {
@@ -1266,8 +1206,8 @@ function measureLayout(layout: TechLayout): void {
     maxX = Math.max(maxX, label.x + 240);
     maxY = Math.max(maxY, label.y + LABEL_H);
   }
-  layout.worldW = maxX + 28;
-  layout.worldH = maxY + 28;
+  layout.worldW = Math.max(640, maxX + 28);
+  layout.worldH = Math.max(480, maxY + 28);
 }
 
 function layoutFromSaved(saved: SavedTree, genesById: Map<string, GeneRecord>): { layout: TechLayout; edges: TechEdge[] } {
@@ -1306,6 +1246,7 @@ function layoutFromSaved(saved: SavedTree, genesById: Map<string, GeneRecord>): 
 
 function nodeCard(node: TechNode, genesById: Map<string, GeneRecord>): string {
   if (node.label) return node.label;
+  if (node.card) return node.card;
   const gene = node.geneId ? genesById.get(node.geneId) : undefined;
   return gene?.id ?? node.entry?.name ?? node.id;
 }
@@ -1468,10 +1409,13 @@ function buildNodeButton(node: TechNode, genesById: Map<string, GeneRecord>, nam
   const card = nodeCard(node, genesById);
   const code = gene?.id ?? entry?.code ?? node.id;
   const category = gene?.category ?? entry?.category ?? "";
+  const isPartNode = !gene && regulatoryPartById(node.id) !== undefined;
   names.set(node.id, title);
   const button = document.createElement("button");
   button.type = "button";
-  button.className = gene ? "tech-node" : "tech-node is-label";
+  button.className = gene || isPartNode ? "tech-node" : "tech-node is-label";
+  if (gene && isGeneUnlocked(gene.id)) button.classList.add("is-unlocked");
+  else if (isPartNode && isPartUnlocked(node.id)) button.classList.add("is-unlocked");
   button.dataset.nodeId = node.id;
   button.draggable = false;
   button.style.left = `${node.x}px`;
@@ -1486,6 +1430,13 @@ function buildNodeButton(node: TechNode, genesById: Map<string, GeneRecord>, nam
     const icon = document.createElement("img");
     icon.className = "tech-node-icon";
     icon.src = `${ICON_URL}/${gene.id}.png`;
+    icon.alt = "";
+    icon.draggable = false;
+    button.append(icon);
+  } else if (node.iconUrl) {
+    const icon = document.createElement("img");
+    icon.className = "tech-node-icon";
+    icon.src = node.iconUrl;
     icon.alt = "";
     icon.draggable = false;
     button.append(icon);
@@ -1640,6 +1591,78 @@ function parseSavedTree(value: unknown): SavedTree | null {
 
 function isLayoutNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 20000;
+}
+
+function unlockBlock(node: TechNode): HTMLElement {
+  if (node.geneId) return geneUnlockBlock(node.geneId);
+  if (regulatoryPartById(node.id)) return partUnlockBlock(node.id);
+  const filler = document.createElement("p");
+  filler.hidden = true;
+  return filler;
+}
+
+function geneUnlockBlock(geneId: string): HTMLElement {
+  const cost = geneUnlockCost(geneId);
+  if (cost === null) {
+    const filler = document.createElement("p");
+    filler.hidden = true;
+    return filler;
+  }
+  if (isGeneUnlocked(geneId)) {
+    const state = document.createElement("p");
+    state.className = "genome-detail-meta tech-unlock-state";
+    state.textContent = "Unlocked";
+    return state;
+  }
+  const affordable = mutationPointCount() >= cost;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "tech-unlock";
+  button.textContent = affordable ? `Unlock · ${cost} MP` : `Unlock · needs ${cost} MP`;
+  button.title = affordable ? `Spend ${cost} mutation point${cost === 1 ? "" : "s"} to unlock this gene` : "Not enough mutation points";
+  button.disabled = !affordable;
+  button.addEventListener("click", () => {
+    if (unlockGene(geneId)) playCue("success");
+    else playCue("deny");
+  });
+  return button;
+}
+
+function partUnlockBlock(id: string): HTMLElement {
+  if (isPartUnlocked(id)) {
+    const state = document.createElement("p");
+    state.className = "genome-detail-meta tech-unlock-state";
+    state.textContent = isPartDefault(id) ? "Unlocked by default" : "Unlocked";
+    return state;
+  }
+  const cost = partUnlockCost(id) ?? 0;
+  const missing = missingPartRequirements(id);
+  const block = document.createElement("div");
+  block.className = "tech-unlock-block";
+  if (missing.length > 0) {
+    const reasons = document.createElement("p");
+    reasons.className = "genome-detail-meta";
+    reasons.textContent = missing.join(" · ");
+    block.append(reasons);
+  }
+  const affordable = partRequirementsMet(id) && mutationPointCount() >= cost;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "tech-unlock";
+  button.textContent = affordable ? `Unlock · ${cost} MP` : `Unlock · needs ${cost} MP`;
+  button.title =
+    missing.length > 0
+      ? "Prerequisites are still locked"
+      : affordable
+        ? `Spend ${cost} mutation point${cost === 1 ? "" : "s"} to unlock this regulatory element`
+        : "Not enough mutation points";
+  button.disabled = !affordable;
+  button.addEventListener("click", () => {
+    if (unlockPart(id)) playCue("success");
+    else playCue("deny");
+  });
+  block.append(button);
+  return block;
 }
 
 function relationBlock(title: string, edges: TechEdge[], end: "from" | "to", names: Map<string, string>): HTMLDivElement {

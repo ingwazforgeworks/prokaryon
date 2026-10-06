@@ -9,7 +9,7 @@ See [[Naming Conventions]] for the suffix scheme and [[Metabolic Map]] for how t
 | Resource | Role | Produced by | Consumed by |
 |---|---|---|---|
 | [[ATP]] | Immediately usable energy | [[ATP Synthase (ATPS)]] | Every active process |
-| [[Fluxin]] | Energy intermediate and ion-motive-force proxy | [[Fluxidase (FLUX)]], [[Photorhodin (PHOR)]], [[Reaction Center (RXNC)]] | [[ATP Synthase (ATPS)]], [[Reducin Dehydrogenase (RDCD)]], [[Flagellar Motor Protein (FLGM)]] |
+| [[Fluxin]] | Energy intermediate and ion-motive-force proxy | [[Fluxidase (FLUX)]], [[Photorhodin (PHOR)]], [[Reaction Center (RXNC)]] | [[ATP Synthase (ATPS)]], [[Reducin Dehydrogenase (RDCD)]] |
 | [[Reducin]] | Reducing power for biosynthesis | [[Reducin Dehydrogenase (RDCD)]], [[Reaction Center (RXNC)]] | [[Glycon Synthase (GLYS)]] |
 | [[Biomass]] | Structural material; gates growth and division | [[Anabolase (ANAB)]] | Growth, division, maintenance losses |
 | [[Osmolyn]] | Compatible solute balancing internal water | [[Osmolyn Synthase (OSMS)]] | Osmotic defence |

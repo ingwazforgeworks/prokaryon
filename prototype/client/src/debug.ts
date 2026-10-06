@@ -29,13 +29,21 @@ export class LightDebug {
     return !this.root.hidden;
   }
 
+  private shownAngle = Number.NaN;
+  private shownPercent = -1;
+
   toggle(): void {
     this.root.hidden = !this.root.hidden;
+    if (this.open) {
+      this.shownAngle = Number.NaN;
+      this.shownPercent = -1;
+      this.refresh();
+    }
   }
 
   follow(cycle: SunCycle): void {
     this.cycle = cycle;
-    this.refresh();
+    if (this.open) this.refresh();
   }
 
   brightness(): number {
@@ -43,7 +51,11 @@ export class LightDebug {
   }
 
   showBrightness(intensity: number): void {
-    this.level.textContent = `Brightness ${Math.round(intensity * 100)}%`;
+    if (!this.open) return;
+    const percent = Math.round(intensity * 100);
+    if (percent === this.shownPercent) return;
+    this.shownPercent = percent;
+    this.level.textContent = `Brightness ${percent}%`;
   }
 
   direction(): [number, number, number] {
@@ -52,6 +64,8 @@ export class LightDebug {
 
   private refresh(): void {
     const shown = Math.round(this.cycle.angle * 10) / 10;
+    if (shown === this.shownAngle) return;
+    this.shownAngle = shown;
     const text = Math.abs(shown).toFixed(1);
     const sign = shown > 0 ? "+" : shown < 0 ? "-" : "";
     this.value.textContent = `${sign}${text}°`;

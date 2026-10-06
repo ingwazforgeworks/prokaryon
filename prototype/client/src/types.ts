@@ -79,6 +79,8 @@ export interface CellSnapshot {
   capsule: number;
   motor: "idle" | "run" | "tumble";
   activity: number;
+  /** Per-site beat strength. Sites the map leaves out fall back to `activity`. */
+  activityBySite?: Partial<Record<FlagellumSnapshot["site"], number>>;
   /** 0–2 beat rate. 1 is the resting pace. */
   ciliaSpeed: number;
   /** 0–1 scale of the cilium beat. */

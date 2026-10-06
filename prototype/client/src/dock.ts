@@ -1,18 +1,16 @@
 import { titleScreenOpen } from "./menu";
-import { createUiSound, playUiSound, UI_HOVER, UI_SELECT } from "./uiSound";
+import { playCue } from "./uiSound";
 
-export type DockTab = "genome" | "expression" | "environment" | "codex" | "tech-tree";
+export type DockTab = "genome" | "gene-editor" | "expression" | "environment" | "codex" | "tech-tree";
 
 const HOTKEYS: Partial<Record<string, DockTab>> = {
   KeyG: "genome",
+  KeyX: "gene-editor",
   KeyE: "expression",
   KeyV: "environment",
   KeyC: "codex",
   KeyT: "tech-tree",
 };
-
-const HOVER_SOUND = UI_HOVER;
-const CLICK_SOUND = UI_SELECT;
 
 const environmentListeners = new Set<(visible: boolean) => void>();
 
@@ -26,19 +24,19 @@ export function initDock(): void {
   const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".dock-tab"));
   const viewer = document.querySelector<HTMLElement>("#genome-viewer");
   const viewerClose = document.querySelector<HTMLButtonElement>("#genome-viewer-close");
+  const geneEditor = document.querySelector<HTMLElement>("#gene-editor");
+  const geneEditorClose = document.querySelector<HTMLButtonElement>("#gene-editor-close");
   const codex = document.querySelector<HTMLElement>("#codex");
   const codexClose = document.querySelector<HTMLButtonElement>("#codex-close");
   const tech = document.querySelector<HTMLElement>("#tech-tree");
   const techClose = document.querySelector<HTMLButtonElement>("#tech-tree-close");
   const expression = document.querySelector<HTMLElement>("#expression");
   const expressionClose = document.querySelector<HTMLButtonElement>("#expression-close");
-  if (!dock || tabs.length !== 5 || !viewer || !viewerClose || !codex || !codexClose || !tech || !techClose || !expression || !expressionClose) {
+  if (!dock || tabs.length !== 6 || !viewer || !viewerClose || !geneEditor || !geneEditorClose || !codex || !codexClose || !tech || !techClose || !expression || !expressionClose) {
     throw new Error("missing section dock");
   }
 
-  const hoverSound = createUiSound(HOVER_SOUND);
-  const clickSound = createUiSound(CLICK_SOUND);
-  let open: "genome" | "codex" | "tech-tree" | "expression" | null = null;
+  let open: "genome" | "gene-editor" | "codex" | "tech-tree" | "expression" | null = null;
   let environmentOn = false;
 
   const setPressed = (tab: DockTab | null): void => {
@@ -56,9 +54,10 @@ export function initDock(): void {
     for (const listener of environmentListeners) listener(environmentOn);
   };
 
-  const setOpen = (next: "genome" | "codex" | "tech-tree" | "expression" | null): void => {
+  const setOpen = (next: "genome" | "gene-editor" | "codex" | "tech-tree" | "expression" | null): void => {
     open = next;
     viewer.hidden = next !== "genome";
+    geneEditor.hidden = next !== "gene-editor";
     codex.hidden = next !== "codex";
     tech.hidden = next !== "tech-tree";
     expression.hidden = next !== "expression";
@@ -67,7 +66,7 @@ export function initDock(): void {
   };
 
   const select = (tab: DockTab): void => {
-    if (tab === "genome" || tab === "codex" || tab === "tech-tree" || tab === "expression") {
+    if (tab === "genome" || tab === "gene-editor" || tab === "codex" || tab === "tech-tree" || tab === "expression") {
       setOpen(open === tab ? null : tab);
       return;
     }
@@ -76,28 +75,32 @@ export function initDock(): void {
 
   viewerClose.addEventListener("click", () => {
     setOpen(null);
-    playUiSound(clickSound);
+    playCue("close");
+  });
+  geneEditorClose.addEventListener("click", () => {
+    setOpen(null);
+    playCue("close");
   });
   codexClose.addEventListener("click", () => {
     setOpen(null);
-    playUiSound(clickSound);
+    playCue("close");
   });
   techClose.addEventListener("click", () => {
     setOpen(null);
-    playUiSound(clickSound);
+    playCue("close");
   });
   expressionClose.addEventListener("click", () => {
     setOpen(null);
-    playUiSound(clickSound);
+    playCue("close");
   });
 
   for (const button of tabs) {
-    button.addEventListener("pointerenter", () => playUiSound(hoverSound));
+    button.addEventListener("pointerenter", () => playCue("hover"));
     button.addEventListener("click", () => {
       const tab = button.dataset.dock;
       if (!isDockTab(tab)) return;
       select(tab);
-      playUiSound(clickSound);
+      playCue("tab");
     });
   }
 
@@ -113,10 +116,17 @@ export function initDock(): void {
     event.preventDefault();
     event.stopImmediatePropagation();
     select(tab);
-    playUiSound(clickSound);
+    playCue("tab");
   });
 }
 
 function isDockTab(value: string | undefined): value is DockTab {
-  return value === "genome" || value === "expression" || value === "environment" || value === "codex" || value === "tech-tree";
+  return (
+    value === "genome" ||
+    value === "gene-editor" ||
+    value === "expression" ||
+    value === "environment" ||
+    value === "codex" ||
+    value === "tech-tree"
+  );
 }

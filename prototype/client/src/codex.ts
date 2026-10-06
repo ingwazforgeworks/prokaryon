@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { GENES } from "./genes";
-import { createUiSound, playUiSound, UI_SELECT } from "./uiSound";
+import { playCue } from "./uiSound";
 
 type CodexEntry = {
   id: string;
@@ -64,7 +64,6 @@ export function initCodex(): void {
   if (!list || !search || !categories || !empty || !detail) throw new Error("missing codex");
 
   const entries = loadEntries();
-  const clickSound = createUiSound(UI_SELECT);
   const buttons: HTMLButtonElement[] = [];
   const items: HTMLLIElement[] = [];
   let selected: HTMLButtonElement | null = null;
@@ -121,7 +120,7 @@ export function initCodex(): void {
     }
     button.addEventListener("click", () => {
       selectEntry(entry, button);
-      playUiSound(clickSound);
+      playCue("select");
     });
     buttons.push(button);
     items.push(item);
@@ -179,7 +178,7 @@ export function initCodex(): void {
         other.setAttribute("aria-pressed", String(on));
       }
       applyFilter(true);
-      playUiSound(clickSound);
+      playCue("tab");
     });
     categoryTabs.push(tab);
     item.append(tab);

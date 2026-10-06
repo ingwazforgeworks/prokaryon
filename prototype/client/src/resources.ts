@@ -1,6 +1,9 @@
 /** Per-pool storage limit until the simulation reports a real capacity. */
 export const STORAGE_CAPACITY = 1000;
 
+/** Mutation points a new cell starts with. */
+export const STARTING_MUTATION_POINTS = 100;
+
 export type ResourceGroup = "Energy" | "Cell" | "Fuels" | "Stocks" | "Acceptors" | "Carbon" | "Shared" | "Pigments";
 
 export type CellResource = {
@@ -68,7 +71,7 @@ type Listener = () => void;
 
 const listeners = new Set<Listener>();
 
-let mutationPoints = 0;
+let mutationPoints = STARTING_MUTATION_POINTS;
 let population = 0;
 const resources: CellResource[] = CATALOG.map((entry) => ({
   id: entry.id,

@@ -1,8 +1,6 @@
 import { gameSettings, onGameSettings, setGameSettings, uiScale } from "./settings";
-import { createUiSound, playUiSound, UI_HOVER, UI_SELECT } from "./uiSound";
+import { playCue } from "./uiSound";
 
-const HOVER_SOUND = UI_HOVER;
-const CLICK_SOUND = UI_SELECT;
 const DEFAULT_VOLUME = 0.1;
 const PLAY_ICON = "/ui/music_player/play_16.png";
 const PAUSE_ICON = "/ui/music_player/pause_16.png";
@@ -56,8 +54,6 @@ export function initPlayer(): void {
     throw new Error("missing music player");
   }
 
-  const hoverSound = createUiSound(HOVER_SOUND);
-  const clickSound = createUiSound(CLICK_SOUND);
   const music = new Audio();
   const initialVolume = gameSettings().music;
   music.preload = "auto";
@@ -108,18 +104,18 @@ export function initPlayer(): void {
   };
 
   for (const button of [back, next, toggle, volumeButton]) {
-    button.addEventListener("pointerenter", () => playUiSound(hoverSound));
+    button.addEventListener("pointerenter", () => playCue("hover"));
   }
   back.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("step");
     load(index - 1, !music.paused);
   });
   next.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("step");
     load(index + 1, !music.paused);
   });
   toggle.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("device");
     if (music.paused) void music.play().then(paint).catch(() => paint());
     else {
       music.pause();
@@ -127,7 +123,7 @@ export function initPlayer(): void {
     }
   });
   volumeButton.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("toggle");
     setVolume(music.volume === 0 ? remembered : 0);
   });
   level.addEventListener("input", () => {

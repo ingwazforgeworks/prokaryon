@@ -90,7 +90,7 @@ Bdellase (BDEL)	Attaches to another cell and digests it. A stylised stand-in for
 
 Motility (9)
 Flagellin (FLGN)	Builds and exports the filament subunits of a flagellum. Akin to flagellin (FliC).
-Flagellar Motor Protein (FLGM)	Spins that filament by spending Fluxin, so swimming is a continuous cost. Akin to the flagellar stator (MotA, MotB).
+Flagellar Motor Protein (FLGM)	Spins that flagellum by spending ATP, so swimming is a continuous cost. Akin to the flagellar stator (MotA, MotB).
 Taxis Regulator (TAXR)	Compares a receptor reading with the recent past and biases turning: keep going when conditions improve, tumble when they worsen. Akin to the CheA/CheY chemotaxis phosphorelay.
 Pilin (PILN)	Builds retractable filaments that grip a surface and pull the cell along it. Akin to type IV pili and twitching motility (PilA, PilT).
 Cilium Assemblase (CILA)	Builds and maintains cilia, with coverage appearing gradually. Akin to intraflagellar transport and ciliary assembly, collapsed into one module.

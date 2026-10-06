@@ -1,8 +1,9 @@
 import { GENES, type GeneRecord } from "./genes";
+import { isPartUnlocked, unlockedGeneIds } from "./geneUnlocks";
 import { missingGeneRequirements } from "./techTree";
 
-const REGULATORY_ICON_DIR = "/ui/genome_viewer/regulatory_icons/32x32";
-const TAG_ICON_DIR = "/ui/genome_viewer/new_regulatory_icons/32x32";
+const REGULATORY_ICON_DIR = "/ui/genome_viewer/regulatory_icons";
+const TAG_ICON_DIR = "/ui/genome_viewer/localization_icons";
 const NAME_LIMIT = 48;
 
 const REGULATORY_ICONS: Record<string, string> = {
@@ -13,6 +14,13 @@ const REGULATORY_ICONS: Record<string, string> = {
   PERS: `${REGULATORY_ICON_DIR}/persistence_gated_32x32.png`,
   SURF: `${TAG_ICON_DIR}/membrane_anchored_32x32.png`,
   THRS: `${REGULATORY_ICON_DIR}/threshold_32x32.png`,
+  OFF: `${REGULATORY_ICON_DIR}/off_32x32.png`,
+  MICRO: `${REGULATORY_ICON_DIR}/microexpression_32x32.png`,
+  LOW: `${REGULATORY_ICON_DIR}/low_expression_32x32.png`,
+  MED: `${REGULATORY_ICON_DIR}/medium_expression_32x32.png`,
+  HIGH: `${REGULATORY_ICON_DIR}/high_expression_32x32.png`,
+  OVER: `${REGULATORY_ICON_DIR}/overexpression_32x32.png`,
+  HYPER: `${REGULATORY_ICON_DIR}/hyperexpression_32x32.png`,
   ANTL: `${TAG_ICON_DIR}/antilateral_32x32.png`,
   BILT: `${TAG_ICON_DIR}/bilateral_32x32.png`,
   BIPO: `${TAG_ICON_DIR}/bipolar_32x32.png`,
@@ -32,9 +40,9 @@ export function regulatoryIcon(id: string | null): string | null {
   return REGULATORY_ICONS[id] ?? null;
 }
 
-export type PartKind = "promoter" | "gene" | "tag";
+export type PartKind = "promoter" | "amount" | "gene" | "tag";
 export type TagRole = "route" | "site";
-export type Slot = "promoter" | "coding" | "route" | "site";
+export type Slot = "promoter" | "amount" | "amount-min" | "amount-max" | "coding" | "route" | "site";
 
 export type PromoterRecord = {
   id: string;
@@ -42,6 +50,17 @@ export type PromoterRecord = {
   summary: string;
   description: string;
   activation: string;
+  /** Ranged promoters vary between a minimum and a maximum amount. */
+  amountMode?: "range";
+};
+
+export type AmountRecord = {
+  id: string;
+  name: string;
+  summary: string;
+  description: string;
+  /** Rank on the six-step expression ladder, 1 (micro) through 6 (over). */
+  level: number;
 };
 
 export type TagRecord = {
@@ -70,6 +89,9 @@ export type Draft = {
   name: string;
   code: string;
   promoterId: string | null;
+  amountId: string | null;
+  amountMinId: string | null;
+  amountMaxId: string | null;
   geneId: string | null;
   routeId: string | null;
   siteId: string | null;
@@ -80,6 +102,9 @@ export type Cassette = {
   name: string;
   code: string;
   promoterId: string;
+  amountId: string | null;
+  amountMinId: string | null;
+  amountMaxId: string | null;
   geneId: string;
   routeId: string | null;
   siteId: string | null;
@@ -116,20 +141,15 @@ const PROMOTERS: PromoterRecord[] = [
     summary: "Rises with input",
     description: "Expression strength follows the input instead of switching fully on or off. The slope is not parameterized yet.",
     activation: "Rises with the input",
+    amountMode: "range",
   },
   {
     id: "OSCL",
     name: "Oscillatory",
     summary: "Cycles on and off",
-    description: "Expression turns on and off in a repeating cycle. The period is not parameterized yet.",
+    description: "Expression sweeps smoothly between the minimum and maximum amounts in a repeating cycle of about four seconds.",
     activation: "Cycles on and off",
-  },
-  {
-    id: "PERS",
-    name: "Persistence gated",
-    summary: "Holds after the signal",
-    description: "Once expression starts, it continues for a while after the triggering signal is gone. The hold time is not parameterized yet.",
-    activation: "Holds after the signal ends",
+    amountMode: "range",
   },
   {
     id: "THRS",
@@ -137,6 +157,58 @@ const PROMOTERS: PromoterRecord[] = [
     summary: "On past a level",
     description: "Expression stays off until an input passes a level, then switches on. The level is not parameterized yet.",
     activation: "On once an input passes a level",
+  },
+];
+
+const AMOUNTS: AmountRecord[] = [
+  {
+    id: "OFF",
+    name: "No expression",
+    summary: "Silent gene",
+    description: "Produces no protein at all. Keeps the gene in the genome without spending anything on it.",
+    level: 0,
+  },
+  {
+    id: "MICRO",
+    name: "Microexpression",
+    summary: "Trace output",
+    description: "Produces only a trace of protein, just above the detection threshold. Good for genes where even a little does the job.",
+    level: 1,
+  },
+  {
+    id: "LOW",
+    name: "Low expression",
+    summary: "Light output",
+    description: "Produces a small, steady stream of protein. Light on the cell's resources.",
+    level: 2,
+  },
+  {
+    id: "MED",
+    name: "Medium expression",
+    summary: "Balanced output",
+    description: "Produces a moderate amount of protein. The balanced choice for most genes.",
+    level: 3,
+  },
+  {
+    id: "HIGH",
+    name: "High expression",
+    summary: "Strong output",
+    description: "Produces a large amount of protein. Strong output with a real cost to the cell.",
+    level: 4,
+  },
+  {
+    id: "OVER",
+    name: "Overexpression",
+    summary: "Above-normal output",
+    description: "Produces more protein than the cell normally uses. Heavy output that strains growth.",
+    level: 5,
+  },
+  {
+    id: "HYPER",
+    name: "Hyperexpression",
+    summary: "Maximum output",
+    description: "Produces protein as fast as the cell can manage. The strongest setting available.",
+    level: 6,
   },
 ];
 
@@ -215,6 +287,7 @@ const TAGS: TagRecord[] = [
 
 const genesById = new Map(GENES.map((gene) => [gene.id, gene]));
 const promotersById = new Map(PROMOTERS.map((promoter) => [promoter.id, promoter]));
+const amountsById = new Map(AMOUNTS.map((amount) => [amount.id, amount]));
 const tagsById = new Map(TAGS.map((tag) => [tag.id, tag]));
 
 const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: string | null }> = {
@@ -235,6 +308,7 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
   CRTS: { routeId: "SURF", siteId: "ANTL" },
   BFP: { routeId: "SURF", siteId: "BILT" },
   FLGN: { routeId: null, siteId: "PolarLocalizationSignal" },
+  FLGM: { routeId: "TransmembraneSignal", siteId: null },
   PILN: { routeId: null, siteId: "AntiPolarLocalizationSignal" },
   CHMR: { routeId: null, siteId: "BIPO" },
   CHLS: { routeId: null, siteId: "LATR" },
@@ -255,6 +329,10 @@ export function geneById(id: string): GeneRecord | undefined {
 
 export function promoterById(id: string): PromoterRecord | undefined {
   return promotersById.get(id);
+}
+
+export function amountById(id: string): AmountRecord | undefined {
+  return amountsById.get(id);
 }
 
 export function tagById(id: string): TagRecord | undefined {
@@ -285,6 +363,7 @@ export function subscribeGenome(listener: (notice: GenomeNotice) => void): () =>
 
 export function partKind(id: string): PartKind | null {
   if (promotersById.has(id)) return "promoter";
+  if (amountsById.has(id)) return "amount";
   if (genesById.has(id)) return "gene";
   if (tagsById.has(id)) return "tag";
   return null;
@@ -296,22 +375,52 @@ export function tagRole(id: string): TagRole | null {
   return null;
 }
 
-export function dropTarget(id: string): Slot | null {
+/** Genes whose protein only works through one specific destination route. */
+const GENE_ROUTES: Record<string, string[]> = {
+  FLGN: ["SecretoryPeptide"],
+  FLGM: ["TransmembraneSignal"],
+};
+
+/**
+ * Whether a gene accepts a destination route. Genes without a restriction take
+ * any route; the restriction only binds once the coding region is placed.
+ */
+export function geneAcceptsRoute(geneId: string | null, routeId: string): boolean {
+  if (geneId === null) return true;
+  const allowed = GENE_ROUTES[geneId];
+  return allowed === undefined || allowed.includes(routeId);
+}
+
+/** True when the promoter varies between a minimum and a maximum amount. */
+export function amountRange(promoterId: string | null): boolean {
+  return promoterId !== null && promotersById.get(promoterId)?.amountMode === "range";
+}
+
+export function dropTargets(id: string): Slot[] {
   const kind = partKind(id);
-  if (kind === "promoter") return "promoter";
-  if (kind === "gene") return "coding";
+  if (kind === "promoter") return ["promoter"];
+  if (kind === "amount") return amountRange(draft.promoterId) ? ["amount-min", "amount-max"] : ["amount"];
+  if (kind === "gene") return ["coding"];
   const role = tagRole(id);
-  if (role === "route") return "route";
-  if (role === "site" && draft.routeId !== "CYTO") return "site";
-  return null;
+  if (role === "route") return geneAcceptsRoute(draft.geneId, id) ? ["route"] : [];
+  if (role === "site" && draft.routeId !== "CYTO") return ["site"];
+  return [];
+}
+
+export function dropTarget(id: string): Slot | null {
+  return dropTargets(id)[0] ?? null;
 }
 
 export function slotAccepts(slot: Slot, id: string): boolean {
-  return dropTarget(id) === slot;
+  return dropTargets(id).includes(slot);
 }
 
 export function unlockedPromoters(): CatalogPart[] {
-  return PROMOTERS.map(promoterPart);
+  return PROMOTERS.filter((promoter) => isPartUnlocked(promoter.id)).map(promoterPart);
+}
+
+export function unlockedAmounts(): CatalogPart[] {
+  return AMOUNTS.filter((amount) => isPartUnlocked(amount.id)).map(amountPart);
 }
 
 export function catalogGenesPopulated(): boolean {
@@ -335,6 +444,7 @@ export function unlockedGenes(): CatalogPart[] {
   const present = genomeGeneIds();
   if (!catalogPopulated) {
     const made = new Set(genome.map((cassette) => cassette.geneId));
+    for (const id of unlockedGeneIds()) made.add(id);
     return GENES.filter((gene) => made.has(gene.id)).map(genePart);
   }
   return GENES.filter((gene) => missingGeneRequirements(gene.id, present).length === 0).map(genePart);
@@ -342,7 +452,7 @@ export function unlockedGenes(): CatalogPart[] {
 
 export function unlockedTags(role?: TagRole): CatalogPart[] {
   const tags = role ? TAGS.filter((tag) => tagRole(tag.id) === role) : TAGS;
-  return tags.map(tagPart);
+  return tags.filter((tag) => isPartUnlocked(tag.id)).map(tagPart);
 }
 
 export function scalarResponse(promoterId: string | null): ScalarResponse | null {
@@ -365,6 +475,44 @@ export function behaviorLine(value: Draft = draft): string {
   return `${promoter.activation} → ${gene.name} production${where}`;
 }
 
+// Placeholder costs in tenths, until the simulation reports real economy values.
+const AMOUNT_ATP_TENTHS: readonly number[] = [2, 5, 10, 20, 40, 80];
+const PROMOTER_ATP_TENTHS: Record<string, number> = { CNST: 0, COND: 1, GRAD: 2, OSCL: 1, THRS: 2 };
+const PROMOTER_MP: Record<string, number> = { CNST: 1, COND: 2, GRAD: 3, OSCL: 3, THRS: 2 };
+const TAG_ATP_TENTHS = 5;
+const CODING_MP = 2;
+const DEFAULT_AMOUNT_LEVEL = 3;
+
+/** Placeholder ATP upkeep per second for one cassette, until the simulation reports real costs. */
+export function cassetteAtpCost(cassette: Cassette): number {
+  const level = Math.round(cassetteAmountLevel(cassette));
+  const amount = AMOUNT_ATP_TENTHS[Math.min(AMOUNT_ATP_TENTHS.length - 1, Math.max(0, level - 1))] ?? 10;
+  const promoter = PROMOTER_ATP_TENTHS[cassette.promoterId] ?? 2;
+  const tags = (cassette.routeId === null ? 0 : 1) + (cassette.siteId === null ? 0 : 1);
+  return (amount + promoter + tags * TAG_ATP_TENTHS) / 10;
+}
+
+/** Placeholder mutation point cost of assembling one cassette in the editor. */
+export function cassetteMutationCost(cassette: Cassette): number {
+  const promoter = PROMOTER_MP[cassette.promoterId] ?? 2;
+  const amount = Math.max(1, Math.round(cassetteAmountLevel(cassette)));
+  const tags = (cassette.routeId === null ? 0 : 1) + (cassette.siteId === null ? 0 : 1);
+  return promoter + amount + CODING_MP + tags;
+}
+
+/** Expression level of a cassette, 1 through 6. Ranged promoters average their two levels. */
+function cassetteAmountLevel(cassette: Cassette): number {
+  if (amountRange(cassette.promoterId)) {
+    const min = cassette.amountMinId ? amountsById.get(cassette.amountMinId)?.level : undefined;
+    const max = cassette.amountMaxId ? amountsById.get(cassette.amountMaxId)?.level : undefined;
+    if (min === undefined && max === undefined) return DEFAULT_AMOUNT_LEVEL;
+    if (min === undefined) return max ?? DEFAULT_AMOUNT_LEVEL;
+    if (max === undefined) return min;
+    return (min + max) / 2;
+  }
+  return cassette.amountId ? amountsById.get(cassette.amountId)?.level ?? DEFAULT_AMOUNT_LEVEL : DEFAULT_AMOUNT_LEVEL;
+}
+
 export function draftProblems(value: Draft = draft, present: ReadonlySet<string> = genomeGeneIds()): string[] {
   const problems: string[] = [];
   if (value.name.trim().length === 0) problems.push("Name the construct.");
@@ -374,7 +522,19 @@ export function draftProblems(value: Draft = draft, present: ReadonlySet<string>
   if (!value.geneId) problems.push("Add a coding region.");
   else if (!genesById.has(value.geneId)) problems.push("Coding region is not in the catalog.");
   else problems.push(...missingGeneRequirements(value.geneId, present));
+  if (amountRange(value.promoterId)) {
+    if (value.amountMinId && partKind(value.amountMinId) !== "amount") problems.push("Minimum amount part is not in the catalog.");
+    if (value.amountMaxId && partKind(value.amountMaxId) !== "amount") problems.push("Maximum amount part is not in the catalog.");
+    const min = value.amountMinId ? amountsById.get(value.amountMinId) : undefined;
+    const max = value.amountMaxId ? amountsById.get(value.amountMaxId) : undefined;
+    if (min && max && min.level > max.level) problems.push("Minimum amount cannot be above the maximum amount.");
+  } else if (value.amountId && partKind(value.amountId) !== "amount") problems.push("Amount part is not in the catalog.");
   if (value.routeId && tagRole(value.routeId) !== "route") problems.push("Destination tag is not in the catalog.");
+  if (value.routeId && !geneAcceptsRoute(value.geneId, value.routeId)) {
+    const gene = value.geneId ? genesById.get(value.geneId) : undefined;
+    const route = tagsById.get(value.routeId);
+    problems.push(`${gene?.name ?? "This gene"} only takes the ${route?.name ?? "matching"} destination tag.`);
+  }
   if (value.siteId && (value.routeId === "CYTO" || tagRole(value.siteId) !== "site")) problems.push("Cytosolic localization cannot take a second tag.");
   return problems;
 }
@@ -401,6 +561,24 @@ export function setDraftCode(code: string): void {
   notifyDraft();
 }
 
+/**
+ * AUTO identity for the draft: the position word plus the gene name ("Polar
+ * Flagellin"), and a code from the position initial plus the gene name's
+ * consonant skeleton ("PFLG"). Needs a placed coding region; null otherwise.
+ */
+export function autoIdentity(value: Draft = draft): { name: string; code: string } | null {
+  if (!value.geneId) return null;
+  const gene = genesById.get(value.geneId);
+  if (!gene) return null;
+  const site = value.siteId !== null ? tagsById.get(value.siteId) : undefined;
+  const prefix = site && tagRole(site.id) === "site" ? site.name : "";
+  const name = prefix ? `${prefix} ${gene.name}` : gene.name;
+  const consonants = gene.name.toUpperCase().replace(/[^A-Z]/g, "").replace(/[AEIOU]/g, "");
+  let code = (prefix ? prefix[0].toUpperCase() : "") + consonants.slice(0, prefix ? 3 : 4);
+  if (code.length < 3) code = (code + gene.id).slice(0, prefix ? 4 : 5);
+  return { name: name.slice(0, NAME_LIMIT), code: normalizeCode(code) };
+}
+
 export function setInsertionIndex(index: number): void {
   const next = clamp(Math.round(index), 0, genome.length);
   if (next === insertion) return;
@@ -411,12 +589,18 @@ export function setInsertionIndex(index: number): void {
 export function placePart(slot: Slot, id: string): boolean {
   if (!slotAccepts(slot, id)) return false;
   if (slot === "promoter" && draft.promoterId === id) return true;
+  if (slot === "amount" && draft.amountId === id) return true;
+  if (slot === "amount-min" && draft.amountMinId === id) return true;
+  if (slot === "amount-max" && draft.amountMaxId === id) return true;
   if (slot === "coding" && draft.geneId === id) return true;
   if (slot === "route" && draft.routeId === id) return true;
   if (slot === "site" && draft.siteId === id) return true;
   draft = {
     ...draft,
     promoterId: slot === "promoter" ? id : draft.promoterId,
+    amountId: slot === "amount" ? id : draft.amountId,
+    amountMinId: slot === "amount-min" ? id : draft.amountMinId,
+    amountMaxId: slot === "amount-max" ? id : draft.amountMaxId,
     geneId: slot === "coding" ? id : draft.geneId,
     routeId: slot === "route" ? id : draft.routeId,
     siteId: slot === "route" && id === "CYTO" ? null : slot === "site" ? id : draft.siteId,
@@ -427,12 +611,18 @@ export function placePart(slot: Slot, id: string): boolean {
 
 export function clearPart(slot: Slot): void {
   if (slot === "promoter" && draft.promoterId === null) return;
+  if (slot === "amount" && draft.amountId === null) return;
+  if (slot === "amount-min" && draft.amountMinId === null) return;
+  if (slot === "amount-max" && draft.amountMaxId === null) return;
   if (slot === "coding" && draft.geneId === null) return;
   if (slot === "route" && draft.routeId === null) return;
   if (slot === "site" && draft.siteId === null) return;
   draft = {
     ...draft,
     promoterId: slot === "promoter" ? null : draft.promoterId,
+    amountId: slot === "amount" ? null : draft.amountId,
+    amountMinId: slot === "amount-min" ? null : draft.amountMinId,
+    amountMaxId: slot === "amount-max" ? null : draft.amountMaxId,
     geneId: slot === "coding" ? null : draft.geneId,
     routeId: slot === "route" ? null : draft.routeId,
     siteId: slot === "site" ? null : draft.siteId,
@@ -450,11 +640,15 @@ export function insertDraft(): { cassette: Cassette; index: number } | { problem
   if (problems.length > 0 || !draft.promoterId || !draft.geneId) return { problems };
   const at = clamp(insertion, 0, genome.length);
   const appending = at === genome.length;
+  const ranged = amountRange(draft.promoterId);
   const cassette: Cassette = {
     uid: nextUid(),
     name: draft.name.trim(),
     code: draft.code,
     promoterId: draft.promoterId,
+    amountId: ranged ? null : draft.amountId,
+    amountMinId: ranged ? draft.amountMinId : null,
+    amountMaxId: ranged ? draft.amountMaxId : null,
     geneId: draft.geneId,
     routeId: draft.routeId,
     siteId: draft.siteId,
@@ -472,6 +666,13 @@ export function removeCassette(uid: string): boolean {
   insertion = clamp(insertion, 0, genome.length);
   notifyGenome(null);
   return true;
+}
+
+export function clearGenome(): void {
+  if (genome.length === 0) return;
+  genome = [];
+  insertion = 0;
+  notifyGenome(null);
 }
 
 export function snapshot(): GenomeSnapshot {
@@ -535,7 +736,7 @@ export function resetGenomeState(): void {
 }
 
 function emptyDraft(): Draft {
-  return { name: "Untitled construct", code: "", promoterId: null, geneId: null, routeId: null, siteId: null };
+  return { name: "Untitled construct", code: "", promoterId: null, amountId: null, amountMinId: null, amountMaxId: null, geneId: null, routeId: null, siteId: null };
 }
 
 function isCatalogCassette(uid: string): boolean {
@@ -548,6 +749,9 @@ function catalogGenome(): Cassette[] {
     name: gene.name,
     code: gene.id,
     promoterId: "CNST",
+    amountId: null,
+    amountMinId: null,
+    amountMaxId: null,
     geneId: gene.id,
     ...catalogTagFields(gene.id),
   }));
@@ -559,6 +763,18 @@ function genomeGeneIds(): Set<string> {
 
 function catalogTagFields(geneId: string): { routeId: string | null; siteId: string | null } {
   return CATALOG_PLACEMENTS[geneId] ?? { routeId: null, siteId: null };
+}
+
+function readAmountFields(
+  body: { amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown },
+  promoterId: string | null,
+): { amountId: string | null; amountMinId: string | null; amountMaxId: string | null } {
+  const amountId = typeof body.amountId === "string" && amountsById.has(body.amountId) ? body.amountId : null;
+  const amountMinId = typeof body.amountMinId === "string" && amountsById.has(body.amountMinId) ? body.amountMinId : null;
+  const amountMaxId = typeof body.amountMaxId === "string" && amountsById.has(body.amountMaxId) ? body.amountMaxId : null;
+  // Only the fields matching the promoter's amount mode are kept.
+  if (amountRange(promoterId)) return { amountId: null, amountMinId, amountMaxId };
+  return { amountId, amountMinId: null, amountMaxId: null };
 }
 
 function readTagFields(body: { routeId?: unknown; siteId?: unknown; tagId?: unknown }): { routeId: string | null; siteId: string | null } {
@@ -584,6 +800,17 @@ function promoterPart(promoter: PromoterRecord): CatalogPart {
   };
 }
 
+function amountPart(amount: AmountRecord): CatalogPart {
+  return {
+    id: amount.id,
+    kind: "amount",
+    name: amount.name,
+    summary: amount.summary,
+    description: amount.description,
+    icon: regulatoryIcon(amount.id) ?? CYTOSOLIC_ICON,
+  };
+}
+
 function genePart(gene: GeneRecord): CatalogPart {
   return {
     id: gene.id,
@@ -591,7 +818,7 @@ function genePart(gene: GeneRecord): CatalogPart {
     name: gene.name,
     summary: gene.category,
     description: firstSentence(gene.description),
-    icon: `/ui/genome_viewer/proteins/named/individuals_32x32/${gene.id}.png`,
+    icon: `/ui/genome_viewer/proteins/individuals_32x32/${gene.id}.png`,
   };
 }
 
@@ -614,17 +841,17 @@ function firstSentence(text: string): string {
 function sanitizeDraft(value: unknown): Draft {
   const blank = emptyDraft();
   if (!value || typeof value !== "object") return blank;
-  const body = value as { name?: unknown; code?: unknown; promoterId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown };
+  const body = value as { name?: unknown; code?: unknown; promoterId?: unknown; amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown };
   const name = typeof body.name === "string" && body.name.trim().length > 0 ? body.name.slice(0, NAME_LIMIT) : blank.name;
   const code = typeof body.code === "string" ? normalizeCode(body.code) : "";
   const promoterId = typeof body.promoterId === "string" && promotersById.has(body.promoterId) ? body.promoterId : null;
   const geneId = typeof body.geneId === "string" && genesById.has(body.geneId) ? body.geneId : null;
-  return { name, code, promoterId, geneId, ...readTagFields(body) };
+  return { name, code, promoterId, geneId, ...readAmountFields(body, promoterId), ...readTagFields(body) };
 }
 
 function sanitizeCassette(value: unknown): Cassette | null {
   if (!value || typeof value !== "object") return null;
-  const body = value as { uid?: unknown; name?: unknown; code?: unknown; promoterId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown };
+  const body = value as { uid?: unknown; name?: unknown; code?: unknown; promoterId?: unknown; amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown };
   if (typeof body.promoterId !== "string" || !promotersById.has(body.promoterId)) return null;
   if (typeof body.geneId !== "string" || !genesById.has(body.geneId)) return null;
   const tags = readTagFields(body);
@@ -633,7 +860,7 @@ function sanitizeCassette(value: unknown): Cassette | null {
   const supplied = typeof body.code === "string" ? normalizeCode(body.code) : "";
   const code = /^[A-Z0-9]{3,5}$/.test(supplied) ? supplied : gene?.id ?? body.geneId;
   const uid = typeof body.uid === "string" && body.uid.trim().length > 0 ? body.uid.slice(0, 64) : nextUid();
-  return { uid, name, code, promoterId: body.promoterId, geneId: body.geneId, ...tags };
+  return { uid, name, code, promoterId: body.promoterId, geneId: body.geneId, ...readAmountFields(body, body.promoterId), ...tags };
 }
 
 function normalizeCode(code: string): string {

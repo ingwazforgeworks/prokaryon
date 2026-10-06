@@ -110,6 +110,9 @@ interface Sprite {
   rotation: number;
   order: number;
   solid: boolean;
+  cos?: number;
+  sin?: number;
+  spin?: number;
 }
 
 interface TerrainStamp {
@@ -167,19 +170,20 @@ export interface ShoreField {
 const SPRITE_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aCorner;
-uniform vec2 uCenter;
-uniform vec2 uHalfSize;
-uniform float uRotation;
+layout(location = 1) in vec4 iCenterHalf;
+layout(location = 2) in vec2 iSpinDepth;
 uniform vec2 uCamera;
 uniform vec2 uHalfView;
 out vec2 vUv;
 out vec2 vWorld;
 void main() {
-  vec2 local = aCorner * uHalfSize;
-  float c = cos(uRotation);
-  float s = sin(uRotation);
-  vec2 world = uCenter + vec2(c * local.x - s * local.y, s * local.x + c * local.y);
-  gl_Position = vec4((world - uCamera) / uHalfView, 0.0, 1.0);
+  vec2 local = aCorner * iCenterHalf.zw;
+  float c = cos(iSpinDepth.x);
+  float s = sin(iSpinDepth.x);
+  vec2 world = iCenterHalf.xy + vec2(c * local.x - s * local.y, s * local.x + c * local.y);
+  // Stay just behind every cell. Rank 0 is farthest, 1 is nearest.
+  float depth = 0.999 - iSpinDepth.y * 0.008;
+  gl_Position = vec4((world - uCamera) / uHalfView, depth, 1.0);
   vUv = vec2(aCorner.x * 0.5 + 0.5, 0.5 - aCorner.y * 0.5);
   vWorld = world;
 }`;
@@ -196,6 +200,7 @@ uniform int uPointCount;
 out vec4 fragColor;
 
 vec3 pointGlow(vec2 world) {
+  if (uPointCount <= 0) return vec3(0.0);
   vec3 glow = vec3(0.0);
   for (int i = 0; i < 48; i++) {
     if (i >= uPointCount) break;
@@ -221,7 +226,14 @@ export class Terrain {
   private readonly program: WebGLProgram;
   private readonly quad: WebGLBuffer;
   private readonly sprites: Sprite[] = [];
-  private readonly buckets = new Map<string, number[]>();
+  private readonly buckets = new Map<number, number[]>();
+  private readonly instanceBuffer: WebGLBuffer;
+  private instanceData = new Float32Array(256 * 6);
+  private readonly batchLists = new Map<WebGLTexture, number[]>();
+  private readonly visible: number[] = [];
+  private seen = new Uint32Array(0);
+  private seenStamp = 1;
+  private readonly depthOf: number[] = [];
   private drawOrder: number[] = [];
   private ready = false;
   private scanPulse: ((local: number) => Promise<void>) | null = null;
@@ -259,6 +271,11 @@ export class Terrain {
   private shoreBuilt = -1;
   private depositFaceBuilt = -1;
   private depositFaceCache: NutrientFace[] = [];
+  private ventBuilt = -1;
+  private ventCache: Array<[number, number]> = [];
+  private featureBuilt = -1;
+  private featureCache: TerrainFeature[] = [];
+  private bubbleRevision = 0;
 
   constructor(
     private readonly gl: WebGL2RenderingContext,
@@ -272,6 +289,7 @@ export class Terrain {
       new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1]),
       gl.STATIC_DRAW,
     );
+    this.instanceBuffer = gl.createBuffer()!;
     if (start) void this.prepare();
   }
 
@@ -319,18 +337,103 @@ export class Terrain {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(0, 0);
 
-    for (const index of this.drawOrder) {
-      const sprite = this.sprites[index];
-      const [hw, hh] = bounds(sprite);
-      if (Math.abs(sprite.cx - camera[0]) > halfView[0] + hw + 1) continue;
-      if (Math.abs(sprite.cy - camera[1]) > halfView[1] + hh + 1) continue;
-      gl.bindTexture(gl.TEXTURE_2D, sprite.image.texture);
-      gl.uniform2f(uniform(gl, this.program, "uCenter"), sprite.cx, sprite.cy);
-      gl.uniform2f(uniform(gl, this.program, "uHalfSize"), sprite.hw, sprite.hh);
-      gl.uniform1f(uniform(gl, this.program, "uRotation"), sprite.rotation);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    const visible = this.gatherVisible(halfView, camera);
+    if (visible.length === 0) return;
+    visible.sort((a, b) => this.sprites[a].order - this.sprites[b].order || a - b);
+    const denom = Math.max(1, visible.length - 1);
+    if (this.depthOf.length < this.sprites.length) this.depthOf.length = this.sprites.length;
+    for (let rank = 0; rank < visible.length; rank += 1) {
+      const index = visible[rank];
+      this.depthOf[index] = rank / denom;
+      const texture = this.sprites[index].image.texture;
+      let list = this.batchLists.get(texture);
+      if (!list) {
+        list = [];
+        this.batchLists.set(texture, list);
+      }
+      list.push(index);
     }
+
+    const depthWas = gl.isEnabled(gl.DEPTH_TEST);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 24, 0);
+    gl.vertexAttribDivisor(1, 1);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 24, 16);
+    gl.vertexAttribDivisor(2, 1);
+    gl.activeTexture(gl.TEXTURE0);
+    for (const [texture, list] of this.batchLists) {
+      if (list.length === 0) continue;
+      const data = this.growInstances(list.length);
+      for (let i = 0; i < list.length; i += 1) {
+        const sprite = this.sprites[list[i]];
+        const base = i * 6;
+        data[base] = sprite.cx;
+        data[base + 1] = sprite.cy;
+        data[base + 2] = sprite.hw;
+        data[base + 3] = sprite.hh;
+        data[base + 4] = sprite.rotation;
+        data[base + 5] = this.depthOf[list[i]];
+      }
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, list.length * 6), gl.DYNAMIC_DRAW);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, list.length);
+      list.length = 0;
+    }
+    gl.vertexAttribDivisor(1, 0);
+    gl.vertexAttribDivisor(2, 0);
+    gl.disableVertexAttribArray(1);
+    gl.disableVertexAttribArray(2);
+    if (!depthWas) gl.disable(gl.DEPTH_TEST);
+  }
+
+  private gatherVisible(halfView: [number, number], camera: [number, number]): number[] {
+    if (this.seen.length < this.sprites.length) {
+      const next = new Uint32Array(this.sprites.length);
+      next.set(this.seen);
+      this.seen = next;
+    }
+    if (this.seenStamp === 0xffffffff) {
+      this.seen.fill(0);
+      this.seenStamp = 1;
+    } else this.seenStamp += 1;
+    const stamp = this.seenStamp;
+    const visible = this.visible;
+    visible.length = 0;
+    const x0 = Math.floor((camera[0] - halfView[0]) / 4) - 1;
+    const x1 = Math.floor((camera[0] + halfView[0]) / 4) + 1;
+    const y0 = Math.floor((camera[1] - halfView[1]) / 4) - 1;
+    const y1 = Math.floor((camera[1] + halfView[1]) / 4) + 1;
+    for (let iy = y0; iy <= y1; iy += 1) {
+      for (let ix = x0; ix <= x1; ix += 1) {
+        const bucket = this.buckets.get(bucketKey(ix, iy));
+        if (!bucket) continue;
+        for (let n = 0; n < bucket.length; n += 1) {
+          const index = bucket[n];
+          if (this.seen[index] === stamp) continue;
+          this.seen[index] = stamp;
+          const sprite = this.sprites[index];
+          const [hw, hh] = bounds(sprite);
+          if (Math.abs(sprite.cx - camera[0]) > halfView[0] + hw + 1) continue;
+          if (Math.abs(sprite.cy - camera[1]) > halfView[1] + hh + 1) continue;
+          visible.push(index);
+        }
+      }
+    }
+    return visible;
+  }
+
+  private growInstances(count: number): Float32Array {
+    if (this.instanceData.length >= count * 6) return this.instanceData;
+    let cap = this.instanceData.length / 6;
+    while (cap < count) cap *= 2;
+    this.instanceData = new Float32Array(cap * 6);
+    return this.instanceData;
   }
 
   setSlideKeep(keep: number): void {
@@ -567,7 +670,7 @@ export class Terrain {
     const seen = new Set<number>();
     for (let iy = y0; iy <= y1; iy += 1) {
       for (let ix = x0; ix <= x1; ix += 1) {
-        const bucket = this.buckets.get(`${ix},${iy}`);
+        const bucket = this.buckets.get(bucketKey(ix, iy));
         if (!bucket) continue;
         for (const index of bucket) seen.add(index);
       }
@@ -670,14 +773,17 @@ export class Terrain {
     const existing = this.bubbleSources.findIndex((source) => Math.hypot(source.x - x, source.y - y) < 0.85);
     if (existing >= 0) {
       this.bubbleSources.splice(existing, 1);
+      this.bubbleRevision += 1;
       return null;
     }
     if (this.bubbleSources.length >= 48) return null;
     const source = { x, y };
     this.bubbleSources.push(source);
+    this.bubbleRevision += 1;
     return () => {
       const index = this.bubbleSources.indexOf(source);
       if (index >= 0) this.bubbleSources.splice(index, 1);
+      this.bubbleRevision += 1;
       return false;
     };
   }
@@ -725,6 +831,10 @@ export class Terrain {
     return this.bubbleSources;
   }
 
+  bubbleGeneration(): number {
+    return this.bubbleRevision;
+  }
+
   packPointLights(bounds?: { minX: number; minY: number; maxX: number; maxY: number }): PackedPointLights {
     const reach = 12;
     let count = 0;
@@ -745,22 +855,32 @@ export class Terrain {
     return { count, data: this.lightPack, colors: this.lightColor };
   }
 
-  packHeat(): { count: number; data: Float32Array } {
-    const count = Math.min(this.heatSources.length, 48);
-    for (let i = 0; i < count; i += 1) {
-      this.heatPack[i * 3] = this.heatSources[i].x;
-      this.heatPack[i * 3 + 1] = this.heatSources[i].y;
-      this.heatPack[i * 3 + 2] = this.heatSources[i].size;
+  packHeat(bounds?: { minX: number; minY: number; maxX: number; maxY: number }): { count: number; data: Float32Array } {
+    const margin = 14;
+    let count = 0;
+    for (let i = 0; i < this.heatSources.length && count < 48; i += 1) {
+      const source = this.heatSources[i];
+      if (bounds) {
+        if (source.x + margin < bounds.minX || source.x - margin > bounds.maxX) continue;
+        if (source.y + margin < bounds.minY || source.y - margin > bounds.maxY) continue;
+      }
+      this.heatPack[count * 3] = source.x;
+      this.heatPack[count * 3 + 1] = source.y;
+      this.heatPack[count * 3 + 2] = source.size;
+      count += 1;
     }
     return { count, data: this.heatPack };
   }
 
-  ventCenters(): Array<[number, number]> {
+  ventCenters(): readonly [number, number][] {
+    if (this.ready && this.ventBuilt === this.structureGeneration) return this.ventCache;
     const points: Array<[number, number]> = [];
     for (const sprite of this.sprites) {
       if (sprite.image.name.startsWith("vent_")) points.push([sprite.cx, sprite.cy]);
     }
-    return points;
+    this.ventCache = points;
+    this.ventBuilt = this.structureGeneration;
+    return this.ventCache;
   }
 
   /** Mineral faces that leak dissolved nutrient into the water. Cached until the terrain changes. */
@@ -782,6 +902,7 @@ export class Terrain {
   /** Geothermal vents and resource nodes, front-most first. */
   features(): TerrainFeature[] {
     if (!this.ready) return [];
+    if (this.featureBuilt === this.structureGeneration) return this.featureCache;
     const found: TerrainFeature[] = [];
     for (let index = this.drawOrder.length - 1; index >= 0; index -= 1) {
       const sprite = this.sprites[this.drawOrder[index]];
@@ -796,7 +917,9 @@ export class Terrain {
         bounds: () => bounds,
       });
     }
-    return found;
+    this.featureCache = found;
+    this.featureBuilt = this.structureGeneration;
+    return this.featureCache;
   }
 
   /** 1 where a coraly rock tile overlaps that temperature cell. */
@@ -810,6 +933,11 @@ export class Terrain {
     return this.rockMask;
   }
 
+  /** Changes when the rock mask is rebuilt. The temperature field copies the mask only then. */
+  rockStamp(): number {
+    return this.rockBuilt;
+  }
+
   /** Normalized distance to the nearest solid terrain tile. Null until the world is built. */
   shoreFieldData(): ShoreField | null {
     if (!this.ready) return null;
@@ -820,7 +948,9 @@ export class Terrain {
 
   eraseAt(x: number, y: number): void {
     const radius = 1.35;
+    const beforeBubbles = this.bubbleSources.length;
     this.bubbleSources = this.bubbleSources.filter((source) => Math.hypot(source.x - x, source.y - y) > radius);
+    if (this.bubbleSources.length !== beforeBubbles) this.bubbleRevision += 1;
     if (!this.ready) return;
     this.lights = this.lights.filter((light) => Math.hypot(light.x - x, light.y - y) > radius);
     this.heatSources = this.heatSources.filter((source) => Math.hypot(source.x - x, source.y - y) > radius);
@@ -831,7 +961,7 @@ export class Terrain {
     const y1 = Math.floor((y + radius + 4) / 4);
     for (let iy = y0; iy <= y1; iy += 1) {
       for (let ix = x0; ix <= x1; ix += 1) {
-        const bucket = this.buckets.get(`${ix},${iy}`);
+        const bucket = this.buckets.get(bucketKey(ix, iy));
         if (!bucket) continue;
         for (const index of bucket) seen.add(index);
       }
@@ -1433,7 +1563,7 @@ export class Terrain {
     const iy = Math.floor(y / 4);
     for (let dy = -1; dy <= 1; dy += 1) {
       for (let dx = -1; dx <= 1; dx += 1) {
-        const bucket = this.buckets.get(`${ix + dx},${iy + dy}`);
+        const bucket = this.buckets.get(bucketKey(ix + dx, iy + dy));
         if (!bucket) continue;
         for (const index of bucket) {
           const sprite = this.sprites[index];
@@ -1448,15 +1578,14 @@ export class Terrain {
   }
 
   private pointHits(x: number, y: number): boolean {
-    const bucket = this.buckets.get(`${Math.floor(x / 4)},${Math.floor(y / 4)}`);
+    const bucket = this.buckets.get(bucketKey(Math.floor(x / 4), Math.floor(y / 4)));
     if (!bucket) return false;
     for (const index of bucket) {
       const sprite = this.sprites[index];
       if (!sprite.solid) continue;
       const dx = x - sprite.cx;
       const dy = y - sprite.cy;
-      const c = Math.cos(sprite.rotation);
-      const s = Math.sin(sprite.rotation);
+      const [c, s] = this.trig(sprite);
       const lx = c * dx + s * dy;
       const ly = -s * dx + c * dy;
       if (Math.abs(lx) > sprite.hw || Math.abs(ly) > sprite.hh) continue;
@@ -1546,7 +1675,7 @@ export class Terrain {
     const y1 = Math.floor((sprite.cy + hh + 0.08) / 4);
     for (let y = y0; y <= y1; y += 1) {
       for (let x = x0; x <= x1; x += 1) {
-        const key = `${x},${y}`;
+        const key = bucketKey(x, y);
         const bucket = this.buckets.get(key);
         if (bucket) bucket.push(index);
         else this.buckets.set(key, [index]);
@@ -1567,11 +1696,22 @@ export class Terrain {
     return false;
   }
 
+  private trig(sprite: Sprite): [number, number] {
+    if (sprite.spin === sprite.rotation && sprite.cos !== undefined && sprite.sin !== undefined) {
+      return [sprite.cos, sprite.sin];
+    }
+    const cos = Math.cos(sprite.rotation);
+    const sin = Math.sin(sprite.rotation);
+    sprite.spin = sprite.rotation;
+    sprite.cos = cos;
+    sprite.sin = sin;
+    return [cos, sin];
+  }
+
   private spriteContains(sprite: Sprite, x: number, y: number): boolean {
     const dx = x - sprite.cx;
     const dy = y - sprite.cy;
-    const c = Math.cos(sprite.rotation);
-    const s = Math.sin(sprite.rotation);
+    const [c, s] = this.trig(sprite);
     const lx = c * dx + s * dy;
     const ly = -s * dx + c * dy;
     if (Math.abs(lx) > sprite.hw || Math.abs(ly) > sprite.hh) return false;
@@ -1594,6 +1734,7 @@ export class Terrain {
       x: source.x,
       y: source.y,
     }));
+    this.bubbleRevision += 1;
     this.heatSources = (Array.isArray(edits.heats) ? edits.heats : []).filter(isPointLight).map((source) => ({
       x: source.x,
       y: source.y,
@@ -2050,7 +2191,20 @@ function wallDistance(x: number, y: number): number {
   return Math.min(x - OUTER_LEFT, OUTER_RIGHT - x, y - OUTER_BOTTOM);
 }
 
+const sampleCache: Array<{ length: number; width: number; bend: number; samples: Array<[number, number]> }> = [];
+
 function bodySamples(length: number, width: number, bend = 0): Array<[number, number]> {
+  for (let i = 0; i < sampleCache.length; i += 1) {
+    const entry = sampleCache[i];
+    if (entry.length === length && entry.width === width && entry.bend === bend) return entry.samples;
+  }
+  const samples = buildBodySamples(length, width, bend);
+  sampleCache.push({ length, width, bend, samples });
+  if (sampleCache.length > 8) sampleCache.shift();
+  return samples;
+}
+
+function buildBodySamples(length: number, width: number, bend = 0): Array<[number, number]> {
   const shape = orientedCapsule(length, width);
   const radius = Math.max(1 / 32, shape.radius - 1 / 32);
   const axis =
@@ -2313,6 +2467,10 @@ function spriteBounds(sprite: Sprite): { minX: number; minY: number; maxX: numbe
     }
   }
   return { minX, minY, maxX, maxY };
+}
+
+function bucketKey(ix: number, iy: number): number {
+  return (ix + 512) * 4096 + (iy + 512);
 }
 
 function bounds(sprite: Sprite): [number, number] {

@@ -6,7 +6,8 @@ import { COLUMN_BOTTOM, COLUMN_TOP } from "./light";
  * and the deposit leaches that point back up. Open water that was never supplied
  * loses whatever was added there.
  * Thionite leaks sulfex, ferracite leaks ferron, azoite leaks nitrox,
- * and halite leaks osmolyn.
+ * and halite leaks osmolyn. Past the colored lobes, a faint tail remains
+ * so a cell can still sense which way the deposit lies.
  */
 export interface NutrientFace {
   x: number;
@@ -34,6 +35,17 @@ export const PLUME_LEAD = 1.6;
 export const PLUME_WATER = 15;
 export const PLUME_ROCK = 6;
 export const PLUME_ACROSS = 9;
+/**
+ * Uncolored tail. The lobes above are what the water stain draws. This ellipse
+ * continues past them so open water that looks empty still has a gradient.
+ * About 0.04 on the water axis near 48 units from the plume center.
+ */
+export const TAIL_PEAK = 0.25;
+export const TAIL_WATER = 72;
+export const TAIL_ROCK = 20;
+export const TAIL_ACROSS = 56;
+const TAIL_SLOPE = 2.7;
+const TAIL_CUTOFF = 0.003;
 
 if (!Number.isInteger(NUTRIENT_COLUMNS) || !Number.isInteger(NUTRIENT_ROWS)) {
   throw new Error("nutrient cell does not divide the water column");
@@ -117,6 +129,14 @@ function lobesFor(face: NutrientFace): Lobe[] {
   return lobes;
 }
 
+/** Smooth tail, highest at the plume center. 0 once it falls through the cutoff. */
+export function tailAmount(along: number, across: number): number {
+  const reach = along >= 0 ? TAIL_WATER : TAIL_ROCK;
+  const radius = Math.hypot(along / reach, across / TAIL_ACROSS);
+  const amount = TAIL_PEAK * Math.exp(-radius * TAIL_SLOPE);
+  return amount < TAIL_CUTOFF ? 0 : amount;
+}
+
 /** 1 at the root, narrowing to nothing at the tip. The centerline wanders as it goes. */
 function lobeAmount(
   along: number,
@@ -148,6 +168,7 @@ export function paintNutrients(
   blocked?: (x: number, y: number) => boolean,
   rock?: Uint8Array,
   span?: { c0: number; c1: number; r0: number; r1: number },
+  rows?: Uint8Array,
 ): void {
   const reach = 36;
   for (const face of faces) {
@@ -190,12 +211,55 @@ export function paintNutrients(
           if (sample > amount) amount = sample;
         }
         if (amount <= 0) continue;
+        if (rows) rows[row] = 1;
         if (span) {
           if (column < span.c0) span.c0 = column;
           if (column > span.c1) span.c1 = column;
           if (row < span.r0) span.r0 = row;
           if (row > span.r1) span.r1 = row;
         }
+        const index = (row * NUTRIENT_COLUMNS + column) * 4 + channel;
+        if (amount > values[index]) values[index] = amount;
+      }
+    }
+  }
+}
+
+/**
+ * The same deposits, spread much farther and kept out of the stain texture.
+ * Overlapping tails of one nutrient keep the stronger value.
+ */
+export function paintNutrientTail(
+  values: Float32Array,
+  faces: readonly NutrientFace[],
+  blocked?: (x: number, y: number) => boolean,
+): void {
+  const limit = Math.log(TAIL_PEAK / TAIL_CUTOFF) / TAIL_SLOPE;
+  const alongReach = Math.max(TAIL_WATER, TAIL_ROCK) * limit;
+  const acrossReach = TAIL_ACROSS * limit;
+  for (const face of faces) {
+    const kind = nutrientKind(face.resource);
+    if (!kind) continue;
+    const channel = CHANNEL[kind];
+    const ox = face.x + face.nx * PLUME_LEAD;
+    const oy = face.y + face.ny * PLUME_LEAD;
+    const px = -face.ny;
+    const py = face.nx;
+    const extX = Math.abs(face.nx) * alongReach + Math.abs(px) * acrossReach;
+    const extY = Math.abs(face.ny) * alongReach + Math.abs(py) * acrossReach;
+    const x0 = Math.max(0, Math.floor((ox - extX - NUTRIENT_ORIGIN_X) / NUTRIENT_CELL));
+    const x1 = Math.min(NUTRIENT_COLUMNS - 1, Math.floor((ox + extX - NUTRIENT_ORIGIN_X) / NUTRIENT_CELL));
+    const y0 = Math.max(0, Math.floor((oy - extY - NUTRIENT_ORIGIN_Y) / NUTRIENT_CELL));
+    const y1 = Math.min(NUTRIENT_ROWS - 1, Math.floor((oy + extY - NUTRIENT_ORIGIN_Y) / NUTRIENT_CELL));
+    for (let row = y0; row <= y1; row += 1) {
+      const y = NUTRIENT_ORIGIN_Y + (row + 0.5) * NUTRIENT_CELL;
+      const dy = y - oy;
+      for (let column = x0; column <= x1; column += 1) {
+        const x = NUTRIENT_ORIGIN_X + (column + 0.5) * NUTRIENT_CELL;
+        if (blocked?.(x, y)) continue;
+        const dx = x - ox;
+        const amount = tailAmount(dx * face.nx + dy * face.ny, dx * px + dy * py);
+        if (amount <= 0) continue;
         const index = (row * NUTRIENT_COLUMNS + column) * 4 + channel;
         if (amount > values[index]) values[index] = amount;
       }
@@ -219,21 +283,30 @@ const LEACH = 0.28;
 const FADE = 0.16;
 /** Swirl speed, in cells per second. The curl has no preferred direction. */
 const FLOW = 6;
+/** Matches the byte the water texture can show. Below this, an unsupplied cell is empty. */
+const FLOOR = 1 / 255;
 
 /**
  * Concentration in the water. Deposits write a supply. The live values can be
  * raised or lowered at a point, then they drift back toward that supply.
+ * `read` also includes the uncolored tail. The stain texture does not.
  */
 export class NutrientConcentrations {
   readonly values = new Float32Array(COUNT * 4);
   revision = 0;
   private readonly target = new Float32Array(COUNT * 4);
+  /** Sensing floor past the colored lobes. Never uploaded to the stain. */
+  private readonly tail = new Float32Array(COUNT * 4);
   private readonly scratch = new Float32Array(COUNT * 4);
   private generation = Number.NaN;
   private seeded = false;
   private accumulator = 0;
   private time = 0;
   private readonly span = { c0: 0, c1: -1, r0: 0, r1: -1 };
+  /** Rows that hold supply or concentration. Empty rows are left alone. */
+  private readonly rowLive = new Uint8Array(NUTRIENT_ROWS);
+  private readonly rowScratch = new Uint8Array(NUTRIENT_ROWS);
+  private readonly rowDirty = new Uint8Array(NUTRIENT_ROWS);
   private readonly rock = new Uint8Array(COUNT);
   private useRock = false;
 
@@ -247,13 +320,19 @@ export class NutrientConcentrations {
     this.generation = generation;
     if (generation < 0) return;
     this.target.fill(0);
+    this.tail.fill(0);
     this.rock.fill(0);
+    this.rowLive.fill(0);
     this.useRock = Boolean(blocked);
     this.span.c0 = NUTRIENT_COLUMNS;
     this.span.c1 = -1;
     this.span.r0 = NUTRIENT_ROWS;
     this.span.r1 = -1;
-    paintNutrients(this.target, faces, blocked, this.useRock ? this.rock : undefined, this.span);
+    paintNutrients(this.target, faces, blocked, this.useRock ? this.rock : undefined, this.span, this.rowLive);
+    paintNutrientTail(this.tail, faces, blocked);
+    for (let row = 0; row < NUTRIENT_ROWS; row += 1) {
+      if (this.rowLive[row]) this.rowDirty[row] = 1;
+    }
     if (!this.seeded) {
       this.values.set(this.target);
       this.seeded = true;
@@ -272,10 +351,16 @@ export class NutrientConcentrations {
     if (ticks === 2) this.accumulator = 0;
   }
 
-  /** Concentration in the cell that contains this point. 0 outside the column. */
+  /**
+   * Concentration in the cell that contains this point. 0 outside the column.
+   * The colored plume wins where it is stronger. Elsewhere this is the tail.
+   */
   read(kind: NutrientKind, x: number, y: number): number {
     const index = this.cellIndex(x, y, kind);
-    return index === null ? 0 : this.values[index];
+    if (index === null) return 0;
+    const live = this.values[index];
+    const quiet = this.tail[index];
+    return live > quiet ? live : quiet;
   }
 
   /** Stores up to `amount` in that cell. Returns what actually fit. */
@@ -293,6 +378,8 @@ export class NutrientConcentrations {
     if (column > this.span.c1) this.span.c1 = column;
     if (row < this.span.r0) this.span.r0 = row;
     if (row > this.span.r1) this.span.r1 = row;
+    this.rowLive[row] = 1;
+    this.rowDirty[row] = 1;
     this.revision += 1;
     return stored;
   }
@@ -306,20 +393,50 @@ export class NutrientConcentrations {
     const removed = amount < held ? amount : held;
     if (removed <= 0) return 0;
     this.values[index] = held - removed;
+    const row = Math.floor((y - NUTRIENT_ORIGIN_Y) / NUTRIENT_CELL);
+    this.rowLive[row] = 1;
+    this.rowDirty[row] = 1;
     this.revision += 1;
     return removed;
+  }
+
+  /** Writes rows that changed since the last call into `bytes` and clears that set. */
+  packDirty(bytes: Uint8Array): Array<{ r0: number; r1: number }> {
+    const spans: Array<{ r0: number; r1: number }> = [];
+    const stride = NUTRIENT_COLUMNS * 4;
+    const values = this.values;
+    let row = 0;
+    while (row < NUTRIENT_ROWS) {
+      if (!this.rowDirty[row]) {
+        row += 1;
+        continue;
+      }
+      const r0 = row;
+      while (row < NUTRIENT_ROWS && this.rowDirty[row]) {
+        const start = row * stride;
+        for (let i = 0; i < stride; i += 1) {
+          const value = values[start + i];
+          bytes[start + i] = value <= 0 ? 0 : value >= 1 ? 255 : Math.round(value * 255);
+        }
+        this.rowDirty[row] = 0;
+        row += 1;
+      }
+      spans.push({ r0, r1: row - 1 });
+    }
+    return spans;
   }
 
   private tick(dt: number): void {
     const h = dt / SUBSTEPS;
     for (let step = 0; step < SUBSTEPS; step += 1) {
       this.time += h;
-      this.growSpan();
+      this.expandLive();
       this.stir(h);
       this.diffuse(h);
       this.leach(h);
     }
     this.clearRock();
+    this.reap();
     this.revision += 1;
   }
 
@@ -327,40 +444,96 @@ export class NutrientConcentrations {
     if (!this.useRock) return;
     const values = this.values;
     const rock = this.rock;
-    for (let cell = 0; cell < COUNT; cell += 1) {
-      if (rock[cell] === 0) continue;
-      const index = cell * 4;
-      values[index] = 0;
-      values[index + 1] = 0;
-      values[index + 2] = 0;
-      values[index + 3] = 0;
+    const columns = NUTRIENT_COLUMNS;
+    for (let row = 0; row < NUTRIENT_ROWS; row += 1) {
+      if (!this.rowLive[row]) continue;
+      const rowCell = row * columns;
+      for (let column = 0; column < columns; column += 1) {
+        const cell = rowCell + column;
+        if (rock[cell] === 0) continue;
+        const index = cell * 4;
+        values[index] = 0;
+        values[index + 1] = 0;
+        values[index + 2] = 0;
+        values[index + 3] = 0;
+      }
     }
   }
 
-  private growSpan(): void {
-    if (this.span.c1 < this.span.c0) return;
-    this.span.c0 = Math.max(0, this.span.c0 - 1);
-    this.span.c1 = Math.min(NUTRIENT_COLUMNS - 1, this.span.c1 + 1);
-    this.span.r0 = Math.max(0, this.span.r0 - 1);
-    this.span.r1 = Math.min(NUTRIENT_ROWS - 1, this.span.r1 + 1);
+  /** One extra row on each side, so a swirl can enter water that was empty. */
+  private expandLive(): void {
+    const next = this.rowScratch;
+    next.set(this.rowLive);
+    for (let row = 0; row < NUTRIENT_ROWS; row += 1) {
+      if (!this.rowLive[row]) continue;
+      if (row > 0) next[row - 1] = 1;
+      if (row + 1 < NUTRIENT_ROWS) next[row + 1] = 1;
+    }
+    this.rowLive.set(next);
+  }
+
+  /** Drops rows that faded out, and keeps any neighbor a swirl just entered. */
+  private reap(): void {
+    const keep = this.rowScratch;
+    keep.fill(0);
+    for (let row = 0; row < NUTRIENT_ROWS; row += 1) {
+      if (!this.rowLive[row]) continue;
+      this.rowDirty[row] = 1;
+      if (this.rowCarries(row)) keep[row] = 1;
+      if (row > 0 && this.rowCarries(row - 1)) {
+        keep[row - 1] = 1;
+        this.rowDirty[row - 1] = 1;
+      }
+      if (row + 1 < NUTRIENT_ROWS && this.rowCarries(row + 1)) {
+        keep[row + 1] = 1;
+        this.rowDirty[row + 1] = 1;
+      }
+    }
+    this.rowLive.set(keep);
+  }
+
+  private rowCarries(row: number): boolean {
+    const start = row * NUTRIENT_COLUMNS * 4;
+    const stop = start + NUTRIENT_COLUMNS * 4;
+    const values = this.values;
+    const target = this.target;
+    for (let index = start; index < stop; index += 1) {
+      if (target[index] > 0 || values[index] > FLOOR) return true;
+    }
+    return false;
+  }
+
+  /** Copies each live band plus one row of padding, so a write into that padding is real data. */
+  private copyLive(src: Float32Array, dst: Float32Array): void {
+    const stride = NUTRIENT_COLUMNS * 4;
+    let row = 0;
+    while (row < NUTRIENT_ROWS) {
+      if (!this.rowLive[row]) {
+        row += 1;
+        continue;
+      }
+      let end = row;
+      while (end + 1 < NUTRIENT_ROWS && this.rowLive[end + 1]) end += 1;
+      const r0 = Math.max(0, row - 1);
+      const r1 = Math.min(NUTRIENT_ROWS - 1, end + 1);
+      const start = r0 * stride;
+      dst.set(src.subarray(start, (r1 + 1) * stride), start);
+      row = end + 1;
+    }
   }
 
   private stir(h: number): void {
     const src = this.values;
     const dst = this.scratch;
-    dst.set(src);
+    this.copyLive(src, dst);
     const time = this.time;
     const stride = NUTRIENT_COLUMNS * 4;
     const columns = NUTRIENT_COLUMNS;
     const gain = h * FLOW;
-    const c0 = this.span.c0;
-    const c1 = this.span.c1;
-    const r0 = this.span.r0;
-    const r1 = this.span.r1;
-    if (c1 < c0) return;
-    for (let row = r0; row <= r1; row += 1) {
+    for (let row = 0; row < NUTRIENT_ROWS; row += 1) {
+      if (!this.rowLive[row]) continue;
       const rowCell = row * columns;
-      for (let column = c0; column <= c1; column += 1) {
+      for (let column = 0; column < columns; column += 1) {
         const index = (rowCell + column) * 4;
         if (src[index] === 0 && src[index + 1] === 0 && src[index + 2] === 0 && src[index + 3] === 0) continue;
         if (this.blockedCell(column, row)) continue;
@@ -406,7 +579,7 @@ export class NutrientConcentrations {
         }
       }
     }
-    src.set(dst);
+    this.copyLive(dst, src);
   }
 
   private blockedCell(column: number, row: number): boolean {
@@ -417,18 +590,15 @@ export class NutrientConcentrations {
     const src = this.values;
     const dst = this.scratch;
     const gain = h * DIFFUSION;
-    dst.set(src);
+    this.copyLive(src, dst);
     const stride = NUTRIENT_COLUMNS * 4;
-    const c0 = this.span.c0;
-    const c1 = this.span.c1;
-    const r0 = this.span.r0;
-    const r1 = this.span.r1;
-    if (c1 < c0) return;
-    for (let row = r0; row <= r1; row += 1) {
-      for (let column = c0; column <= c1; column += 1) {
+    const columns = NUTRIENT_COLUMNS;
+    for (let row = 0; row < NUTRIENT_ROWS; row += 1) {
+      if (!this.rowLive[row]) continue;
+      for (let column = 0; column < columns; column += 1) {
         if (this.blockedCell(column, row)) continue;
         const index = (row * NUTRIENT_COLUMNS + column) * 4;
-        if (column + 1 < NUTRIENT_COLUMNS && !this.blockedCell(column + 1, row)) {
+        if (column + 1 < columns && !this.blockedCell(column + 1, row)) {
           exchangeAll(src, dst, index, index + 4, gain);
         }
         if (row + 1 < NUTRIENT_ROWS && !this.blockedCell(column, row + 1)) {
@@ -436,7 +606,7 @@ export class NutrientConcentrations {
         }
       }
     }
-    src.set(dst);
+    this.copyLive(dst, src);
   }
 
   private leach(h: number): void {
@@ -444,10 +614,18 @@ export class NutrientConcentrations {
     const fade = 1 - Math.exp(-FADE * h);
     const values = this.values;
     const target = this.target;
-    for (let index = 0; index < values.length; index += 1) {
-      const pull = target[index] - values[index];
-      if (pull > 0) values[index] += emit * pull;
-      else if (pull < 0) values[index] += fade * pull;
+    const stride = NUTRIENT_COLUMNS * 4;
+    for (let row = 0; row < NUTRIENT_ROWS; row += 1) {
+      if (!this.rowLive[row]) continue;
+      const start = row * stride;
+      const stop = start + stride;
+      for (let index = start; index < stop; index += 1) {
+        const pull = target[index] - values[index];
+        if (pull > 0) values[index] += emit * pull;
+        else if (pull < 0) values[index] += fade * pull;
+        if (values[index] < 0) values[index] = 0;
+        else if (target[index] <= 0 && values[index] < FLOOR) values[index] = 0;
+      }
     }
   }
 
@@ -539,26 +717,27 @@ export class NutrientField {
 
   private upload(): void {
     if (this.concentrations.revision === this.uploaded) return;
-    const values = this.concentrations.values;
-    const bytes = this.bytes;
-    for (let index = 0; index < values.length; index += 1) {
-      const value = values[index];
-      bytes[index] = value <= 0 ? 0 : value >= 1 ? 255 : Math.round(value * 255);
-    }
+    const spans = this.concentrations.packDirty(this.bytes);
+    this.uploaded = this.concentrations.revision;
+    if (spans.length === 0) return;
     const gl = this.gl;
+    const stride = NUTRIENT_COLUMNS * 4;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texSubImage2D(
-      gl.TEXTURE_2D,
-      0,
-      0,
-      0,
-      NUTRIENT_COLUMNS,
-      NUTRIENT_ROWS,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      bytes,
-    );
-    this.uploaded = this.concentrations.revision;
+    for (const span of spans) {
+      const height = span.r1 - span.r0 + 1;
+      const start = span.r0 * stride;
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        span.r0,
+        NUTRIENT_COLUMNS,
+        height,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        this.bytes.subarray(start, start + height * stride),
+      );
+    }
   }
 }

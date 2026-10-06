@@ -26,8 +26,9 @@ The two rows at the bottom are other cells' output. [[Fermentate]] is waste from
 ```text
 Fluxin --ATPS--> ATP        yield set by the active terminal module
 Fluxin --RDCD--> Reducin    reducing power for biosynthesis
-Fluxin --FLGM--> thrust     motility spends the intermediate directly
 ```
+
+Motility is an [[ATP]] expense, not a Fluxin one: [[Flagellar Motor Protein (FLGM)]] and [[Ciliary Motor (CILM)]] draw from the ATP pool that [[ATP Synthase (ATPS)]] fills, so movement competes with growth and maintenance rather than with [[Reducin]] production.
 
 The yield of [[ATP Synthase (ATPS)]] is not fixed. It depends on which terminal module is expressed and whether that module's acceptor is locally available:
 

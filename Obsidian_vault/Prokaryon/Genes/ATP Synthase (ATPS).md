@@ -9,7 +9,7 @@
 **Genetic Prerequisites:** None
 **Other Prerequisites:** None
 **Default Localization:** Cytosol
-**Tradeoff:** Competes with [[Reducin Dehydrogenase (RDCD)]] and [[Flagellar Motor Protein (FLGM)]] for the same [[Fluxin]] pool.
+**Tradeoff:** Competes with [[Reducin Dehydrogenase (RDCD)]] for the same [[Fluxin]] pool.
 **Design basis:** Rotary ATP synthase. Specification §2.1 is explicit that this does not become a flagellar motor — component homology among export ATPases is not a whole-machine lineage — so there is no progression edge from here to [[Flagellar Motor Protein (FLGM)]].
 
 ## Yield depends on the terminal module

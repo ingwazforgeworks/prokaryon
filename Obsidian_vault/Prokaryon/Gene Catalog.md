@@ -143,7 +143,7 @@ The last three are weapons, filed here because each is a secreted product or sur
 | ID | Gene | Function | Notes | S |
 |---|---|---|---|---|
 | FLGN | [[Flagellin (FLGN)]] | Builds filament subunits | Filament alone does not swim | P |
-| FLGM | [[Flagellar Motor Protein (FLGM)]] | Converts [[Fluxin]] into thrust | Requires FLGN | P |
+| FLGM | [[Flagellar Motor Protein (FLGM)]] | Converts [[ATP]] into thrust | Requires FLGN | P |
 | TAXR | [[Taxis Regulator (TAXR)]] | Biases turning from receptor input | Requires a receptor and FLGM | P |
 | PILN | [[Pilin (PILN)]] | Surface attachment and crawling | Slow but flow-resistant | P |
 | CILA | [[Cilium Assemblase (CILA)]] | Builds and maintains cilia | Coverage appears gradually | P |

@@ -99,7 +99,14 @@ export class BubbleField {
     void this.prepare();
   }
 
-  sync(sources: ReadonlyArray<{ x: number; y: number }>): void {
+  private syncedGeneration = -1;
+  private itemUsed = 0;
+  private readonly items: Array<{ frame: SpriteFrame; x: number; y: number }> = [];
+  private readonly order: number[] = [];
+
+  sync(sources: ReadonlyArray<{ x: number; y: number }>, generation: number): void {
+    if (generation === this.syncedGeneration) return;
+    this.syncedGeneration = generation;
     const next: Emitter[] = [];
     for (const source of sources) {
       const existing = this.emitters.find((emitter) => Math.hypot(emitter.x - source.x, emitter.y - source.y) < 0.05);
@@ -128,14 +135,17 @@ export class BubbleField {
       }
       bubble.clock += dt;
     }
-    const kept = this.live.filter((bubble) => bubble.clock < bubble.life + POP_DURATION);
-    this.live.length = 0;
-    this.live.push(...kept);
+    let write = 0;
+    for (let index = 0; index < this.live.length; index += 1) {
+      const bubble = this.live[index];
+      if (bubble.clock < bubble.life + POP_DURATION) this.live[write++] = bubble;
+    }
+    this.live.length = write;
   }
 
   draw(halfView: [number, number], camera: [number, number]): void {
     if (!this.ready || this.live.length === 0) return;
-    const items: Array<{ frame: SpriteFrame; x: number; y: number }> = [];
+    this.itemUsed = 0;
     for (const bubble of this.live) {
       if (bubble.hold > 0) continue;
       const [x, y] = bubblePosition(bubble);
@@ -143,9 +153,12 @@ export class BubbleField {
       const frame = poppingNow
         ? this.pop[bubble.size][Math.min(5, Math.floor(((bubble.clock - bubble.life) / POP_DURATION) * 6))]
         : this.idle[bubble.size][bubble.variant];
-      items.push({ frame, x, y });
+      this.placeItem(frame, x, y);
     }
-    items.sort((a, b) => a.y - b.y);
+    const order = this.order;
+    order.length = this.itemUsed;
+    for (let index = 0; index < this.itemUsed; index += 1) order[index] = index;
+    order.sort((a, b) => this.items[a].y - this.items[b].y);
     const gl = this.gl;
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -157,18 +170,34 @@ export class BubbleField {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    for (const item of items) {
+    let bound: WebGLTexture | null = null;
+    for (let n = 0; n < order.length; n += 1) {
+      const item = this.items[order[n]];
       const centerX = snapCenter(item.x + item.frame.ox, item.frame.w);
       const centerY = snapCenter(item.y + item.frame.oy, item.frame.h);
       const hw = (item.frame.w * PIXEL) / 2;
       const hh = (item.frame.h * PIXEL) / 2;
       if (Math.abs(centerX - camera[0]) > halfView[0] + hw + PIXEL) continue;
       if (Math.abs(centerY - camera[1]) > halfView[1] + hh + PIXEL) continue;
-      gl.bindTexture(gl.TEXTURE_2D, item.frame.texture);
+      if (item.frame.texture !== bound) {
+        bound = item.frame.texture;
+        gl.bindTexture(gl.TEXTURE_2D, bound);
+      }
       gl.uniform2f(uniform(gl, this.program, "uCenter"), centerX, centerY);
       gl.uniform2f(uniform(gl, this.program, "uHalfSize"), hw, hh);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
+  }
+
+  private placeItem(frame: SpriteFrame, x: number, y: number): void {
+    const index = this.itemUsed;
+    const existing = this.items[index];
+    if (existing) {
+      existing.frame = frame;
+      existing.x = x;
+      existing.y = y;
+    } else this.items.push({ frame, x, y });
+    this.itemUsed = index + 1;
   }
 
   private spawnBurst(emitter: Emitter): void {

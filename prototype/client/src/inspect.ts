@@ -29,23 +29,34 @@ interface ScreenBox {
   bottom: number;
 }
 
+/** World units. Covers the hover bracket so distant nodes skip the screen projection. */
+const INSPECT_MARGIN = 2;
 const HOVER_COLOR = "#8c9aa0";
 const SELECT_COLOR = "#e2decd";
 const HOVER_THICK = 2;
 const SELECT_THICK = 3;
 
+let playerCell: CellSnapshot | null = null;
+let playerId = -1;
+const playerTarget: InspectTarget = {
+  id: "cell:0",
+  title: "Player cell",
+  lines: ["Placeholder"],
+  contains(worldX, worldY) {
+    return playerCell !== null && cellContains(playerCell, worldX, worldY);
+  },
+  bounds() {
+    return playerCell ? cellBounds(playerCell) : { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  },
+};
+
 export function playerCellTarget(cell: CellSnapshot): InspectTarget {
-  return {
-    id: `cell:${cell.id}`,
-    title: "Player cell",
-    lines: ["Placeholder"],
-    contains(worldX, worldY) {
-      return cellContains(cell, worldX, worldY);
-    },
-    bounds() {
-      return cellBounds(cell);
-    },
-  };
+  playerCell = cell;
+  if (cell.id !== playerId) {
+    playerId = cell.id;
+    playerTarget.id = `cell:${cell.id}`;
+  }
+  return playerTarget;
 }
 
 export function createInspect(host: HTMLCanvasElement, view: InspectView) {
@@ -83,12 +94,23 @@ export function createInspect(host: HTMLCanvasElement, view: InspectView) {
   let hoveredId: string | null = null;
   let selectedId: string | null = null;
   let shownKey = "";
+  let overlayClear = true;
 
   const pick = (clientX: number, clientY: number): string | null => {
     const world = view.worldAt(clientX, clientY);
     for (const target of targets) {
+      const bounds = target.bounds();
+      if (
+        world &&
+        (world[0] < bounds.minX - INSPECT_MARGIN ||
+          world[0] > bounds.maxX + INSPECT_MARGIN ||
+          world[1] < bounds.minY - INSPECT_MARGIN ||
+          world[1] > bounds.maxY + INSPECT_MARGIN)
+      ) {
+        continue;
+      }
       if (world && target.contains(world[0], world[1])) return target.id;
-      const box = screenBox(view, target.bounds());
+      const box = screenBox(view, bounds);
       if (box && insideBracket(clientX, clientY, box)) return target.id;
     }
     return null;
@@ -152,8 +174,13 @@ export function createInspect(host: HTMLCanvasElement, view: InspectView) {
     update(next: readonly InspectTarget[]): void {
       targets = next;
       if (selectedId && !targets.some((target) => target.id === selectedId)) selectedId = null;
+      const hoverBefore = hoveredId;
+      const selectBefore = selectedId;
       refreshHover();
+      const showing = hoveredId !== null || selectedId !== null;
+      if (!showing && overlayClear && hoveredId === hoverBefore && selectedId === selectBefore) return;
       paint();
+      overlayClear = !showing;
     },
     pointer(clientX: number, clientY: number): void {
       pointerInside = true;

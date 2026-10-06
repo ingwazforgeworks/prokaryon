@@ -1,8 +1,12 @@
 import {
+  amountById,
+  amountRange,
+  autoIdentity,
   behaviorLine,
   clearDraft,
   clearPart,
   draftProblems,
+  dropTargets,
   geneById,
   getDraft,
   getGenome,
@@ -13,45 +17,51 @@ import {
   regulatoryIcon,
   removeCassette,
   scalarResponse,
+  geneAcceptsRoute,
   setDraftCode,
   setDraftName,
-  dropTarget,
   tagRole,
   slotAccepts,
   subscribeDraft,
   subscribeGenome,
   tagById,
-  catalogGenesPopulated,
-  setCatalogGenesPopulated,
+  unlockedAmounts,
   unlockedGenes,
   unlockedPromoters,
   unlockedTags,
   type CatalogPart,
+  type Draft,
   type ScalarResponse,
   type Slot,
 } from "./genomeState";
 import { uiScale } from "./settings";
-import { playUiSound, createUiSound, UI_SELECT } from "./uiSound";
+import { subscribeUnlocks } from "./geneUnlocks";
+import { playCue } from "./uiSound";
 
-type TrayTab = "promoter" | "gene" | "route" | "site";
+type TrayTab = "promoter" | "amount" | "gene" | "route" | "site";
+
+/** Pointer travel before a stage press counts as a pan instead of a click. */
+const PAN_DRAG_THRESHOLD = 4;
+/** Extra travel past the overflowed edge so the end slots are not glued to the border. */
+const PAN_SLACK = 32;
+
+type PanDrag = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  moved: boolean;
+};
 
 export function initGenomeEditor(): void {
   const root = document.querySelector<HTMLElement>("#genome-editor-pane");
-  const viewer = document.querySelector<HTMLElement>("#genome-viewer");
-  const populateGenes = document.querySelector<HTMLButtonElement>("#populate-genes");
-  if (!root || !viewer || !populateGenes) throw new Error("missing genome editor");
+  const host = document.querySelector<HTMLElement>("#gene-editor");
+  if (!root || !host) throw new Error("missing genome editor");
 
-  const clickSound = createUiSound(UI_SELECT);
-  populateGenes.addEventListener("click", () => {
-    const next = !catalogGenesPopulated();
-    setCatalogGenesPopulated(next);
-    populateGenes.classList.toggle("active", next);
-    populateGenes.setAttribute("aria-pressed", String(next));
-    playUiSound(clickSound);
-  });
   let tab: TrayTab = "promoter";
-  const queries: Record<TrayTab, string> = { promoter: "", gene: "", route: "", site: "" };
-  const scrolls: Record<TrayTab, number> = { promoter: 0, gene: 0, route: 0, site: 0 };
+  const queries: Record<TrayTab, string> = { promoter: "", amount: "", gene: "", route: "", site: "" };
+  const scrolls: Record<TrayTab, number> = { promoter: 0, amount: 0, gene: 0, route: 0, site: 0 };
   let selectedSlot: Slot | null = null;
   let selectedPart: CatalogPart | null = null;
   let status = "";
@@ -75,6 +85,13 @@ export function initGenomeEditor(): void {
   clear.type = "button";
   clear.className = "editor-clear";
   clear.textContent = "Clear";
+  const auto = document.createElement("button");
+  auto.type = "button";
+  auto.className = "editor-auto";
+  auto.textContent = "Auto";
+  auto.title = "Generate name and code from placed parts";
+  auto.setAttribute("aria-label", "Auto-generate gene name and code");
+  nameLabel.append(auto);
   benchBar.append(nameLabel, clear);
   const codeInput = document.createElement("input");
   codeInput.className = "editor-code";
@@ -86,11 +103,20 @@ export function initGenomeEditor(): void {
   identity.append(benchBar, codeLabel);
   const stage = document.createElement("div");
   stage.className = "editor-stage";
+  const stageWorld = document.createElement("div");
+  stageWorld.className = "editor-stage-world";
   const track = document.createElement("div");
   track.className = "editor-track";
   const behavior = document.createElement("p");
   behavior.className = "editor-behavior";
-  stage.append(track, behavior);
+  stageWorld.append(track, behavior);
+  const resetView = document.createElement("button");
+  resetView.type = "button";
+  resetView.className = "editor-stage-reset genome-scroll-step";
+  resetView.textContent = "◎";
+  resetView.title = "Reset view";
+  resetView.setAttribute("aria-label", "Reset view");
+  stage.append(stageWorld, resetView);
   bench.append(identity, stage);
 
   const tray = document.createElement("section");
@@ -105,6 +131,7 @@ export function initGenomeEditor(): void {
   const tabButtons = new Map<TrayTab, HTMLButtonElement>();
   for (const entry of [
     ["promoter", "Promoters"],
+    ["amount", "Amount"],
     ["gene", "Genes"],
     ["route", "Destination"],
     ["site", "Position"],
@@ -115,13 +142,7 @@ export function initGenomeEditor(): void {
     button.setAttribute("role", "tab");
     button.textContent = entry[1];
     button.addEventListener("click", () => {
-      if (tab === entry[0]) return;
-      scrolls[tab] = cards.scrollLeft;
-      tab = entry[0];
-      search.value = queries[tab];
-      renderCards();
-      syncTabs();
-      playUiSound(clickSound);
+      selectTab(entry[0]);
     });
     tabButtons.set(entry[0], button);
     tabs.append(button);
@@ -216,14 +237,126 @@ export function initGenomeEditor(): void {
     status = "Construct cleared.";
     selectedSlot = null;
     clearDraft();
-    playUiSound(clickSound);
+    playCue("back");
+  });
+  auto.addEventListener("click", () => {
+    const identity = autoIdentity();
+    if (!identity) {
+      status = "Place a coding region before generating a name.";
+      render();
+      playCue("deny");
+      return;
+    }
+    setDraftName(identity.name);
+    setDraftCode(identity.code);
+    status = "Generated name and gene code.";
+    render();
+    playCue("select");
   });
   add.addEventListener("click", () => {
     void addToGenome();
   });
-  viewer.addEventListener("pointerdown", (event) => {
+  host.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
   });
+
+  let panX = 0;
+  let panY = 0;
+  let panMoved = false;
+  let panDrag: PanDrag | null = null;
+
+  const applyPan = (): void => {
+    stageWorld.style.transform = `translate(${panX}px, ${panY}px)`;
+  };
+
+  // Panning only exists while the world overflows the stage; the slack lets
+  // the end slots clear the border instead of stopping flush against it.
+  const panBounds = (): { maxX: number; maxY: number } => {
+    const styles = window.getComputedStyle(stage);
+    const padX = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+    const padY = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+    const overflowX = Math.max(0, stageWorld.offsetWidth - (stage.clientWidth - padX));
+    const overflowY = Math.max(0, stageWorld.offsetHeight - (stage.clientHeight - padY));
+    return {
+      maxX: overflowX > 0 ? overflowX / 2 + PAN_SLACK : 0,
+      maxY: overflowY > 0 ? overflowY / 2 + PAN_SLACK : 0,
+    };
+  };
+
+  const clampPan = (): void => {
+    const { maxX, maxY } = panBounds();
+    panX = Math.min(maxX, Math.max(-maxX, panX));
+    panY = Math.min(maxY, Math.max(-maxY, panY));
+    applyPan();
+  };
+
+  resetView.addEventListener("click", () => {
+    panX = 0;
+    panY = 0;
+    applyPan();
+    playCue("select");
+  });
+
+  stage.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    if (event.target instanceof Element && event.target.closest(".editor-stage-reset")) return;
+    panMoved = false;
+    panDrag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: panX, originY: panY, moved: false };
+  });
+
+  stage.addEventListener("pointermove", (event) => {
+    const drag = panDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < PAN_DRAG_THRESHOLD) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      stage.classList.add("is-panning");
+      try {
+        stage.setPointerCapture(event.pointerId);
+      } catch {
+        // Capture only guarantees event delivery; the pan still works without it.
+      }
+    }
+    const { maxX, maxY } = panBounds();
+    panX = Math.min(maxX, Math.max(-maxX, drag.originX + (event.clientX - drag.startX) / uiScale()));
+    panY = Math.min(maxY, Math.max(-maxY, drag.originY + (event.clientY - drag.startY) / uiScale()));
+    applyPan();
+  });
+
+  const endPan = (event: PointerEvent): void => {
+    const drag = panDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    panDrag = null;
+    stage.classList.remove("is-panning");
+    if (drag.moved) panMoved = true;
+  };
+  stage.addEventListener("pointerup", endPan);
+  stage.addEventListener("pointercancel", endPan);
+
+  // A finished pan ends as a click on whatever slot is under the pointer; swallow it.
+  stage.addEventListener("click", (event) => {
+    if (!panMoved) return;
+    panMoved = false;
+    event.stopPropagation();
+    event.preventDefault();
+  }, true);
+
+  stage.addEventListener("wheel", (event) => {
+    const { maxX, maxY } = panBounds();
+    if (maxX <= 0 && maxY <= 0) return;
+    const nextX = Math.min(maxX, Math.max(-maxX, panX + event.deltaX));
+    const nextY = Math.min(maxY, Math.max(-maxY, panY + event.deltaY));
+    if (nextX === panX && nextY === panY) return;
+    panX = nextX;
+    panY = nextY;
+    applyPan();
+    event.preventDefault();
+    event.stopPropagation();
+  }, { passive: false });
+
+  const panObserver = new ResizeObserver(() => clampPan());
+  panObserver.observe(stage);
+  panObserver.observe(stageWorld);
 
   const render = (): void => {
     syncIdentity();
@@ -237,6 +370,7 @@ export function initGenomeEditor(): void {
 
   subscribeDraft(render);
   subscribeGenome(() => render());
+  subscribeUnlocks(() => renderCards());
   render();
 
   function syncIdentity(): void {
@@ -247,21 +381,44 @@ export function initGenomeEditor(): void {
 
   function renderTrack(): void {
     const value = getDraft();
+    const range = amountRange(value.promoterId);
     track.replaceChildren(
       partModule("promoter", "Promoter", value.promoterId),
       joint("editor-joint-a"),
-      partModule("coding", "Coding region", value.geneId),
+      range
+        ? amountStack(partModule("amount-min", "Min amount", value.amountMinId), partModule("amount-max", "Max amount", value.amountMaxId))
+        : partModule("amount", "Amount", value.amountId),
       joint("editor-joint-b"),
-      tagModule("route", "Destination", value.routeId, false),
+      partModule("coding", "Coding region", value.geneId),
       joint("editor-joint-c"),
+      tagModule("route", "Destination", value.routeId, false),
+      joint("editor-joint-d"),
       tagModule("site", "Position", value.siteId, value.routeId === "CYTO"),
     );
     behavior.textContent = behaviorLine(value);
   }
 
+  /** Range promoters stack min over max so the gap between them sits on the row centerline. */
+  function amountStack(min: HTMLElement, max: HTMLElement): HTMLElement {
+    const stack = document.createElement("div");
+    stack.className = "editor-amount-stack";
+    stack.append(min, max);
+    return stack;
+  }
+
   function partModule(slot: Exclude<Slot, "tag">, label: string, id: string | null): HTMLElement {
-    const record = id ? (slot === "promoter" ? promoterById(id) : geneById(id)) : undefined;
-    const icon = !id ? null : slot === "promoter" ? regulatoryIcon(id) : `/ui/genome_viewer/proteins/named/individuals_32x32/${id}.png`;
+    const record = !id
+      ? undefined
+      : slot === "promoter"
+        ? promoterById(id)
+        : slot === "coding"
+          ? geneById(id)
+          : amountById(id);
+    const icon = !id
+      ? null
+      : slot === "coding"
+        ? `/ui/genome_viewer/proteins/individuals_32x32/${id}.png`
+        : regulatoryIcon(id);
     return slotFrame(slot, label, record?.name ?? null, icon);
   }
 
@@ -296,13 +453,14 @@ export function initGenomeEditor(): void {
       remove.addEventListener("click", (event) => {
         event.stopPropagation();
         clearPart(slot);
-        playUiSound(clickSound);
+        playCue("close");
       });
       frame.append(remove);
     }
     frame.addEventListener("click", (event) => {
       if (event.target instanceof Element && event.target.closest(".editor-remove")) return;
       selectedSlot = slot;
+      selectTab(slotTab(slot));
       render();
     });
     return frame;
@@ -326,7 +484,7 @@ export function initGenomeEditor(): void {
     frame.className = "editor-protein";
     if (gene) {
       const image = document.createElement("img");
-      image.src = `/ui/genome_viewer/proteins/named/individuals/${gene.id}.png`;
+      image.src = `/ui/genome_viewer/proteins/individuals/${gene.id}.png`;
       image.alt = gene.name;
       frame.append(image);
     }
@@ -343,7 +501,7 @@ export function initGenomeEditor(): void {
     const activation = field("Activation", promoter?.activation ?? "None", promoter ? regulatoryIcon(promoter.id) : null);
     const localizationName = [route?.name, site?.name].filter((name): name is string => Boolean(name)).join(" · ");
     const localization = field("Localization", localizationName || "None", route ? regulatoryIcon(route.id) : site ? regulatoryIcon(site.id) : null);
-    inspect.append(frame, name, meta, copy, activation, localization);
+    inspect.append(frame, name, meta, copy, activation, ...amountInspectorFields(value), localization);
 
     response.replaceChildren();
     const curve = scalarResponse(value.promoterId);
@@ -369,12 +527,26 @@ export function initGenomeEditor(): void {
     }
   }
 
+  function amountInspectorFields(value: Draft): HTMLParagraphElement[] {
+    if (amountRange(value.promoterId)) {
+      const min = value.amountMinId ? amountById(value.amountMinId) : undefined;
+      const max = value.amountMaxId ? amountById(value.amountMaxId) : undefined;
+      return [
+        ...(min ? [field("Min amount", min.name, regulatoryIcon(min.id))] : []),
+        ...(max ? [field("Max amount", max.name, regulatoryIcon(max.id))] : []),
+      ];
+    }
+    const single = value.amountId ? amountById(value.amountId) : undefined;
+    return single ? [field("Amount", single.name, regulatoryIcon(single.id))] : [];
+  }
+
   function partKey(part: CatalogPart): string {
     return `${part.kind}:${part.id}`;
   }
 
   function partKindLabel(part: CatalogPart): string {
     if (part.kind === "promoter") return "Promoter";
+    if (part.kind === "amount") return "Amount";
     if (part.kind === "gene") return "Gene";
     return tagRole(part.id) === "site" ? "Position" : "Destination";
   }
@@ -392,7 +564,7 @@ export function initGenomeEditor(): void {
     const frame = document.createElement("figure");
     frame.className = part.kind === "gene" ? "editor-protein" : "editor-protein editor-protein-mark";
     const image = document.createElement("img");
-    image.src = part.kind === "gene" ? `/ui/genome_viewer/proteins/named/individuals/${part.id}.png` : part.icon;
+    image.src = part.kind === "gene" ? `/ui/genome_viewer/proteins/individuals/${part.id}.png` : part.icon;
     image.alt = "";
     frame.append(image);
     const name = document.createElement("h3");
@@ -445,6 +617,10 @@ export function initGenomeEditor(): void {
       const label = part.kind === "gene" ? part.id : part.name;
       card.title = part.kind === "gene" ? `${part.name} (${part.id})` : part.summary ? `${part.name} — ${part.summary}` : part.name;
       card.setAttribute("aria-label", part.kind === "gene" ? `${part.name}, ${part.id}` : part.name);
+      if (part.kind === "tag" && tagRole(part.id) === "route" && !geneAcceptsRoute(getDraft().geneId, part.id)) {
+        card.classList.add("is-dimmed");
+        card.title = `${card.title} — not a valid destination for this gene`;
+      }
       const icon = document.createElement("img");
       icon.src = part.icon;
       icon.alt = "";
@@ -458,6 +634,7 @@ export function initGenomeEditor(): void {
       card.addEventListener("pointerenter", () => {
         selectedPart = part;
         renderSelection();
+        playCue("hover");
       });
       card.addEventListener("pointerdown", (event) => {
         if (event.button !== 0) return;
@@ -502,10 +679,13 @@ export function initGenomeEditor(): void {
         : null;
       hidePreview();
       markTargets(part, false);
-      if (!slot) return;
+      if (!slot) {
+        if (dragging) playCue("deny");
+        return;
+      }
       placePart(slot, part.id);
       selectedSlot = slot;
-      playUiSound(clickSound);
+      playCue("select");
     };
     card.addEventListener("pointermove", move);
     card.addEventListener("pointerup", finish);
@@ -513,7 +693,14 @@ export function initGenomeEditor(): void {
   }
 
   function filteredParts(): CatalogPart[] {
-    const all = tab === "promoter" ? unlockedPromoters() : tab === "gene" ? unlockedGenes() : unlockedTags(tab);
+    const all =
+      tab === "promoter"
+        ? unlockedPromoters()
+        : tab === "amount"
+          ? unlockedAmounts()
+          : tab === "gene"
+            ? unlockedGenes()
+            : unlockedTags(tab);
     const query = queries[tab].trim().toLowerCase();
     if (query.length === 0) return all;
     return all.filter((part) => `${part.name} ${part.summary} ${part.description} ${part.id}`.toLowerCase().includes(query));
@@ -525,14 +712,34 @@ export function initGenomeEditor(): void {
     }
   }
 
+  function selectTab(next: TrayTab): void {
+    if (tab === next) return;
+    scrolls[tab] = cards.scrollLeft;
+    tab = next;
+    search.value = queries[tab];
+    renderCards();
+    syncTabs();
+    playCue("tab");
+  }
+
+  function slotTab(slot: Slot): TrayTab {
+    if (slot === "promoter") return "promoter";
+    if (slot === "amount" || slot === "amount-min" || slot === "amount-max") return "amount";
+    if (slot === "coding") return "gene";
+    if (slot === "route") return "route";
+    return "site";
+  }
+
   async function addToGenome(): Promise<void> {
     if (busy) return;
     const reasons = draftProblems();
     if (reasons.length > 0) {
       status = reasons.join(" ");
       render();
+      playCue("deny");
       return;
     }
+    playCue("button");
     busy = true;
     renderActions();
     const before = getGenome().length;
@@ -541,18 +748,20 @@ export function initGenomeEditor(): void {
       busy = false;
       status = "problems" in result ? result.problems.join(" ") : "Genome was not changed.";
       render();
+      playCue("deny");
       return;
     }
     const saved = await persistGenome();
     if (!saved) {
       removeCassette(result.cassette.uid);
       status = "Genome was not changed. The save failed.";
+      playCue("alarm");
     } else {
       status = `Added ${result.cassette.name} to the genome.`;
+      playCue("success");
     }
     busy = false;
     render();
-    playUiSound(clickSound);
   }
 
   function showPreview(part: CatalogPart, home: DOMRect): void {
@@ -604,13 +813,13 @@ export function initGenomeEditor(): void {
   }
 
   function markTargets(part: CatalogPart, active: boolean): void {
-    const slot = dropTarget(part.id);
+    const slots = dropTargets(part.id);
     track.classList.toggle("is-aiming", active);
     const nodes = track.querySelectorAll<HTMLElement>("[data-slot]");
     for (let index = 0; index < nodes.length; index += 1) {
       const node = nodes.item(index);
       if (!node) continue;
-      node.classList.toggle("is-target", active && node.dataset.slot === slot);
+      node.classList.toggle("is-target", active && slots.includes(node.dataset.slot as Slot));
     }
   }
 }
@@ -663,7 +872,17 @@ function regulatoryMark(src: string): HTMLImageElement {
 function slotAt(x: number, y: number): Slot | null {
   const hit = document.elementFromPoint(x, y);
   const slot = hit instanceof Element ? hit.closest<HTMLElement>("[data-slot]")?.dataset.slot : undefined;
-  if (slot === "promoter" || slot === "coding" || slot === "route" || slot === "site") return slot;
+  if (
+    slot === "promoter" ||
+    slot === "amount" ||
+    slot === "amount-min" ||
+    slot === "amount-max" ||
+    slot === "coding" ||
+    slot === "route" ||
+    slot === "site"
+  ) {
+    return slot;
+  }
   return null;
 }
 

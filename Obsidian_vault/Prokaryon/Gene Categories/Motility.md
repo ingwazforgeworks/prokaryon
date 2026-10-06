@@ -9,7 +9,7 @@ Everything that moves the cell. The category most constrained by confirmed requi
 | Gene | Role |
 |---|---|
 | [[Flagellin (FLGN)]] | Builds the filament. Needs [[PolarLocalizationSignal]] to produce thrust rather than cancellation |
-| [[Flagellar Motor Protein (FLGM)]] | Turns the filament, burning [[Fluxin]] |
+| [[Flagellar Motor Protein (FLGM)]] | Turns the filament, burning [[ATP]] |
 | [[Taxis Regulator (TAXR)]] | Decides when to keep swimming and when to turn |
 | [[Pilin (PILN)]] | Surface-bound movement and contact, not swimming |
 
@@ -17,7 +17,7 @@ A cell with the first two and not the third swims in a straight line until it hi
 
 ### Cilia
 
-A second machine, not an upgrade of the flagellum. Flagella spin on [[Fluxin]]. Cilia bend on [[ATP]], and a stimulus reverses the stroke by letting calcium into the cilium.
+A second machine, not an upgrade of the flagellum. Flagella spin on [[ATP]]. Cilia bend on [[ATP]], and a stimulus reverses the stroke by letting calcium into the cilium.
 
 | Gene | Role |
 |---|---|
@@ -45,7 +45,7 @@ Directional response also needs polar receptor placement to work at all. See [[P
 
 ### Fidelity constraint
 
-[[ATP Synthase (ATPS)]] and [[Flagellar Motor Protein (FLGM)]] share no progression edge. Sources [B4] and [B5] describe two independently evolved rotary machines, and specification §2.1 states directly that an ATP synthase does not become a flagellar motor. They both use [[Fluxin]]; that is a shared input, not a shared ancestry.
+[[ATP Synthase (ATPS)]] and [[Flagellar Motor Protein (FLGM)]] share no progression edge. Sources [B4] and [B5] describe two independently evolved rotary machines, and specification §2.1 states directly that an ATP synthase does not become a flagellar motor. They are both rotary machines; the resemblance is convergence, not shared ancestry.
 
 ### Why movement is usually the wrong answer
 

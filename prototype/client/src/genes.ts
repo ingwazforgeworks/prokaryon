@@ -307,6 +307,12 @@ export const GENES: GeneRecord[] = [
     "description": "Surface proteins that make the cell stick to other cells of the same type. The clump holds in open water, and the protein ignores debris, minerals, terrain, and every other type of cell."
   },
   {
+    "id": "LUBR",
+    "name": "Lubricin",
+    "category": "Morphology",
+    "description": "Coats the envelope in a slick film that sheds drag and keeps debris from catching. The cell slides past surfaces — and they slide off it — instead of sticking."
+  },
+  {
     "id": "BALA",
     "name": "Ballastin",
     "category": "Motility",
@@ -394,7 +400,7 @@ export const GENES: GeneRecord[] = [
     "id": "FLGM",
     "name": "Flagellar Motor Protein",
     "category": "Motility",
-    "description": "The rotary motor and stator complex that spins a filament, converting Fluxin directly into thrust. Motion is a continuous expense, not a one-off purchase."
+    "description": "The rotary motor and stator complex that spins a flagellum, converting ATP directly into thrust. Motion is a continuous expense."
   },
   {
     "id": "FLGN",
@@ -407,6 +413,18 @@ export const GENES: GeneRecord[] = [
     "name": "Pilin",
     "category": "Motility",
     "description": "Builds retractable surface filaments that grip a substrate and pull. The cell crawls rather than swims: slow, short-ranged, and unbothered by current."
+  },
+  {
+    "id": "CILN",
+    "name": "Cilin",
+    "category": "Motility",
+    "description": "Produces the filament subunits that make up each cilium and exports them into dense, bristling rows across the surface. Builds the oars; does not stroke them."
+  },
+  {
+    "id": "CILM",
+    "name": "Ciliary Motor Protein",
+    "category": "Motility",
+    "description": "The motor complex anchored beneath each row of cilia that flicks them in a coordinated beating stroke. Only cilia sharing its position tag beat, and a row of filaments with no matching motor only drifts."
   },
   {
     "id": "TAXR",

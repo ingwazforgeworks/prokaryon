@@ -2,24 +2,38 @@ import { buoyancyVelocity } from "./buoyancy";
 import { bootFinish, bootMark } from "./boot";
 import { initCodex } from "./codex";
 import { initDock, onEnvironmentVisible } from "./dock";
+import { createEnvironmentProbe } from "./environmentProbe";
 import { createInspect, playerCellTarget } from "./inspect";
 import { initGenomeEditor } from "./genomeEditor";
 import { initExpression, syncExpressionCell } from "./expression";
 import { initGenomeViewer } from "./genomeViewer";
-import { loadGenomeState } from "./genomeState";
+import { clearGenome, getGenome, loadGenomeState, persistGenome, subscribeGenome } from "./genomeState";
+import {
+  flagellinFromConstructs,
+  genomeCanDriveFlagellin,
+  initialBeatState,
+  motorExpressionLevel,
+  motorFromConstructs,
+  stepFlagellarBeat,
+  type FlagellarBeatState,
+  type FlagellinBySite,
+} from "./flagellinDistribution";
+import { loadUnlocks } from "./geneUnlocks";
+import { loadCellState, saveCellState } from "./debugCellState";
 import { initTechTree } from "./techTree";
 import { initPlayer } from "./player";
 import { initResourceBar } from "./resourceBar";
-import { setPopulation } from "./resources";
+import { mutationPointCount, onResources, setMutationPoints, setPopulation } from "./resources";
 import { initTitleScreen, titleScreenOpen } from "./menu";
 import { initSettings } from "./settingsPanel";
+import { bindButtonSounds, playCue } from "./uiSound";
 import { LightDebug } from "./debug";
-import { columnAttenuation, sunCycle } from "./light";
+import { columnAttenuation, formatTimeOfDay, SUN_HOUR_SECONDS, sunCycle } from "./light";
 import { copyFluor, copyPigment, emptyFluor, emptyPigment, fluorEmission, pigmentTint, type FluorLevels, type PigmentLevels } from "./pigment";
 import { CellRenderer, INTERIOR_BASE_COLOR, ISOPRENOID_SHADE, type FieldOverlay } from "./renderer";
 import { SimulationSession } from "./session";
 import { filamentsForFlagellin } from "./flagellum";
-import { acceptedVelocity, collisionSpin, flagellarPulseLabel, independentPulseState, independentSwitchState, randomPulseScale, RELEASE_RECOIL, retainSwimVelocity, stepFlagellarPulse, stepFlagellarSwitch, stepSwim, stepTumble, type FlagellarPulseState, type FlagellarSwitchState, type SwimState } from "./swim";
+import { acceptedVelocity, collisionSpin, flagellarPulseLabel, independentPulseState, independentSwitchState, randomPulseScale, RELEASE_RECOIL, retainSwimVelocity, stepBeatSwitch, stepFlagellarPulse, stepFlagellarSwitch, stepSwim, stepTumble, type FlagellarPulseState, type FlagellarSwitchState, type SwimState } from "./swim";
 import { TAPER_ALL, TAPER_ANTILATERAL, TAPER_ANTIPOLAR, TAPER_LATERAL, TAPER_POLAR, capsuleArea, cellSeparation, ciliaPlacements, curvedHalfExtents, divisionAxisOffset, flagellarBodyLength, maxPiliOnSite, orientedCapsule, piliPlacements, pilusVolumeSamples, vibrioHalfAngle, type BodyShape, type FlagellumSite, type PilusSite, type PosedBody } from "./shape";
 import { adhesinPull, terrainSlideKeep } from "./terrain";
 import { texelIdAt } from "./texels";
@@ -77,11 +91,13 @@ let taperAntipolarDegree = 1;
 let taperLateralDegree = 1;
 let taperAntilateralDegree = 1;
 let undulation = 1;
+/** Per-site beat strength from expressed motor protein, when the genome drives flagellin. */
+let undulationBySite: FlagellinBySite | null = null;
 let pulse = 1;
 let flagellarPulse: FlagellarPulseState = { swimming: true, elapsed: 0, pulse: 1 };
 let flagellarSwitch: FlagellarSwitchState = { clockwise: true, nextClockwise: true, tumbleSign: 1, tumbleOmega: 0 };
-let ccwSwitching = false;
-let wasdEnabled = true;
+let ccwSwitching = true;
+let wasdEnabled = false;
 const swim: SwimState = { vx: 0, vy: 0, omega: 0, thrusting: true, driveX: 0, driveY: 0 };
 let cellScale = 1;
 let nextCellId = 2;
@@ -145,6 +161,7 @@ type CellDrive = {
   piliVariance: number;
   pilusSite: PilusSite;
   undulation: number;
+  undulationBySite: FlagellinBySite | null;
   pulse: number;
   ccw: boolean;
 };
@@ -174,7 +191,28 @@ const renderer = new CellRenderer(canvas);
 bootMark("shaders", 1);
 renderer.setCellScale(cellScale);
 const inspect = createInspect(canvas, renderer);
+let environmentOn = false;
+const environmentProbe = createEnvironmentProbe((clientX, clientY) => {
+  if (titleScreenOpen()) return null;
+  const world = renderer.worldAt(clientX, clientY);
+  if (!world) return null;
+  return renderer.probeEnvironment(world[0], world[1]);
+});
 const debug = new LightDebug();
+const timeDec = document.querySelector<HTMLButtonElement>("#time-dec");
+const timeInc = document.querySelector<HTMLButtonElement>("#time-inc");
+const timeReadout = document.querySelector<HTMLElement>("#time-value");
+if (!timeDec || !timeInc || !timeReadout) throw new Error("missing time of day controls");
+const timeLabel = timeReadout;
+/** Added to the sun clock. One step is one hour of the day. */
+let sunShiftSeconds = 0;
+let shownTime = timeLabel.textContent ?? "";
+timeDec.addEventListener("click", () => {
+  sunShiftSeconds -= SUN_HOUR_SECONDS;
+});
+timeInc.addEventListener("click", () => {
+  sunShiftSeconds += SUN_HOUR_SECONDS;
+});
 const environmentTab = document.querySelector<HTMLButtonElement>("#debug-tab-environment");
 const cellTab = document.querySelector<HTMLButtonElement>("#debug-tab-cell");
 const geneticsTab = document.querySelector<HTMLButtonElement>("#debug-tab-genetics");
@@ -184,6 +222,40 @@ const pigmentTab = document.querySelector<HTMLButtonElement>("#debug-tab-pigment
 const environmentPanel = document.querySelector<HTMLElement>("#debug-environment");
 const cellPanel = document.querySelector<HTMLElement>("#debug-cell");
 const geneticsPanel = document.querySelector<HTMLElement>("#debug-genetics");
+const mutationPointsDec = document.querySelector<HTMLButtonElement>("#mutation-points-dec");
+const mutationPointsInc = document.querySelector<HTMLButtonElement>("#mutation-points-inc");
+const mutationPointsReadout = document.querySelector<HTMLElement>("#mutation-points-value");
+if (!mutationPointsDec || !mutationPointsInc || !mutationPointsReadout) throw new Error("missing mutation point controls");
+const paintMutationPoints = (): void => {
+  mutationPointsReadout.textContent = String(mutationPointCount());
+};
+paintMutationPoints();
+onResources(paintMutationPoints);
+mutationPointsDec.addEventListener("click", () => setMutationPoints(mutationPointCount() - 1));
+mutationPointsInc.addEventListener("click", () => setMutationPoints(mutationPointCount() + 1));
+const deleteAllGenes = document.querySelector<HTMLButtonElement>("#delete-all-genes");
+if (!deleteAllGenes) throw new Error("missing delete all genes");
+deleteAllGenes.addEventListener("click", () => {
+  clearGenome();
+  void persistGenome();
+});
+const saveCellStateButton = document.querySelector<HTMLButtonElement>("#save-cell-state");
+const loadCellStateButton = document.querySelector<HTMLButtonElement>("#load-cell-state");
+const cellStateStatus = document.querySelector<HTMLElement>("#cell-state-status");
+if (!saveCellStateButton || !loadCellStateButton) throw new Error("missing cell state buttons");
+const setCellStateStatus = (text: string): void => {
+  if (cellStateStatus) cellStateStatus.textContent = text;
+};
+saveCellStateButton.addEventListener("click", () => {
+  const ok = saveCellState();
+  playCue(ok ? "success" : "alarm");
+  setCellStateStatus(ok ? "Cell state saved" : "Save failed");
+});
+loadCellStateButton.addEventListener("click", () => {
+  const ok = loadCellState();
+  playCue(ok ? "success" : "alarm");
+  setCellStateStatus(ok ? "Cell state loaded" : "No saved cell state");
+});
 const motilityPanel = document.querySelector<HTMLElement>("#debug-motility");
 const morphologyPanel = document.querySelector<HTMLElement>("#debug-morphology");
 const pigmentPanel = document.querySelector<HTMLElement>("#debug-pigment");
@@ -503,7 +575,7 @@ const setEditMode = (next: "paint" | "erase" | "vent" | "light" | "bubble" | "he
     button.setAttribute("aria-pressed", String(on));
   }
   inspect.setEnabled(editMode === null);
-  canvas.style.cursor = editMode ? "crosshair" : inspect.hovering() ? "pointer" : "";
+  setCanvasCursor(hoverCursor());
   if (!editMode) {
     editing = false;
     renderer.endTerrainStroke();
@@ -521,6 +593,9 @@ const showDebugTab = (tab: "environment" | "cell" | "genetics" | null): void => 
   geneticsTab.classList.toggle("active", tab === "genetics");
   geneticsTab.setAttribute("aria-pressed", String(tab === "genetics"));
 };
+
+const debugPanel = document.querySelector<HTMLElement>("#debug");
+if (debugPanel) bindButtonSounds(debugPanel);
 
 environmentTab.addEventListener("click", () => {
   showDebugTab(environmentPanel.hidden ? "environment" : null);
@@ -630,13 +705,60 @@ function currentTaper(): CellTaper {
   };
 }
 
+const playerTaperScratch: CellTaper = { mask: 0, polar: 0, antipolar: 0, lateral: 0, antilateral: 0 };
+const playerFormScratch: CellForm = { scale: 1, elongation: 1, girth: 1, crescent: 0, taper: playerTaperScratch };
+
+/** Live sliders, reused by the swim step. Callers that keep the form must copy it. */
+function fillPlayerForm(): CellForm {
+  playerFormScratch.scale = cellScale;
+  playerFormScratch.elongation = elongation;
+  playerFormScratch.girth = girth;
+  playerFormScratch.crescent = crescent;
+  playerTaperScratch.mask = taperMask;
+  playerTaperScratch.polar = taperPolarDegree;
+  playerTaperScratch.antipolar = taperAntipolarDegree;
+  playerTaperScratch.lateral = taperLateralDegree;
+  playerTaperScratch.antilateral = taperAntilateralDegree;
+  return playerFormScratch;
+}
+
 function playerForm(): CellForm {
-  return { scale: cellScale, elongation, girth, crescent, taper: currentTaper() };
+  const live = fillPlayerForm();
+  const taper = live.taper;
+  return {
+    scale: live.scale,
+    elongation: live.elongation,
+    girth: live.girth,
+    crescent: live.crescent,
+    taper: {
+      mask: taper.mask,
+      polar: taper.polar,
+      antipolar: taper.antipolar,
+      lateral: taper.lateral,
+      antilateral: taper.antilateral,
+    },
+  };
 }
 
 const ciliaCache = new Map<string, CiliumSnapshot[]>();
 const piliCache = new Map<string, PilusSnapshot[]>();
-const flagellaCache = new Map<number, { key: string; filaments: FlagellumSnapshot[] }>();
+type FlagellaEntry = {
+  flagAntipolar: number;
+  flagPolar: number;
+  flagLateral: number;
+  flagAntilateral: number;
+  scale: number;
+  elongation: number;
+  girth: number;
+  crescent: number;
+  mask: number;
+  taperPolar: number;
+  taperAntipolar: number;
+  taperLateral: number;
+  taperAntilateral: number;
+  filaments: FlagellumSnapshot[];
+};
+const flagellaCache = new Map<number, FlagellaEntry>();
 
 function formKey(form: CellForm): string {
   const taper = form.taper;
@@ -650,6 +772,32 @@ const FLAGELLIN_SITE_KEY: Record<FlagellumSite, number> = {
   antilateral: 30,
 };
 
+function formSame(
+  form: CellForm,
+  scale: number,
+  elongation: number,
+  girth: number,
+  crescent: number,
+  mask: number,
+  polar: number,
+  antipolar: number,
+  lateral: number,
+  antilateral: number,
+): boolean {
+  const taper = form.taper;
+  return (
+    form.scale === scale &&
+    form.elongation === elongation &&
+    form.girth === girth &&
+    form.crescent === crescent &&
+    taper.mask === mask &&
+    taper.polar === polar &&
+    taper.antipolar === antipolar &&
+    taper.lateral === lateral &&
+    taper.antilateral === antilateral
+  );
+}
+
 function flagellaFor(
   cellId: number,
   form: CellForm = playerForm(),
@@ -658,9 +806,28 @@ function flagellaFor(
   lateral = lateralFlagellin,
   antilateral = antilateralFlagellin,
 ): FlagellumSnapshot[] {
-  const key = `${antipolar}|${polar}|${lateral}|${antilateral}|${formKey(form)}`;
   const cached = flagellaCache.get(cellId);
-  if (cached?.key === key) return cached.filaments;
+  if (
+    cached &&
+    cached.flagAntipolar === antipolar &&
+    cached.flagPolar === polar &&
+    cached.flagLateral === lateral &&
+    cached.flagAntilateral === antilateral &&
+    formSame(
+      form,
+      cached.scale,
+      cached.elongation,
+      cached.girth,
+      cached.crescent,
+      cached.mask,
+      cached.taperPolar,
+      cached.taperAntipolar,
+      cached.taperLateral,
+      cached.taperAntilateral,
+    )
+  ) {
+    return cached.filaments;
+  }
   const body = cellDimensions(form.scale, form.elongation, form.girth, form.crescent);
   const reach = flagellarBodyLength(body.length, body.width);
   const built: FlagellumSnapshot[] = [];
@@ -681,7 +848,23 @@ function flagellaFor(
   add(polar, "polar");
   add(lateral, "lateral");
   add(antilateral, "antilateral");
-  flagellaCache.set(cellId, { key, filaments: built });
+  const taper = form.taper;
+  flagellaCache.set(cellId, {
+    flagAntipolar: antipolar,
+    flagPolar: polar,
+    flagLateral: lateral,
+    flagAntilateral: antilateral,
+    scale: form.scale,
+    elongation: form.elongation,
+    girth: form.girth,
+    crescent: form.crescent,
+    mask: taper.mask,
+    taperPolar: taper.polar,
+    taperAntipolar: taper.antipolar,
+    taperLateral: taper.lateral,
+    taperAntilateral: taper.antilateral,
+    filaments: built,
+  });
   return built;
 }
 
@@ -756,21 +939,86 @@ function stepSurfaceFades(now: number): void {
   }
 }
 
+type CiliaRecent = {
+  count: number;
+  length: number;
+  crystal: boolean;
+  scale: number;
+  elongation: number;
+  girth: number;
+  crescent: number;
+  mask: number;
+  polar: number;
+  antipolar: number;
+  lateral: number;
+  antilateral: number;
+  placed: CiliumSnapshot[];
+};
+const ciliaRecent: CiliaRecent[] = [];
+
 function ciliaFor(
   form: CellForm = playerForm(),
   crystal = membraneStyle === 3,
   count = ciliation,
   length = ciliaLength,
 ): CiliumSnapshot[] {
+  for (let index = ciliaRecent.length - 1; index >= 0; index -= 1) {
+    const recent = ciliaRecent[index];
+    if (
+      recent.count === count &&
+      recent.length === length &&
+      recent.crystal === crystal &&
+      formSame(form, recent.scale, recent.elongation, recent.girth, recent.crescent, recent.mask, recent.polar, recent.antipolar, recent.lateral, recent.antilateral)
+    ) {
+      return recent.placed;
+    }
+  }
   const key = `${count}|${length}|${formKey(form)}|${crystal ? 1 : 0}`;
-  const cached = ciliaCache.get(key);
-  if (cached) return cached;
-  if (ciliaCache.size > 48) ciliaCache.clear();
-  const body = cellDimensions(form.scale, form.elongation, form.girth, form.crescent);
-  const placed = ciliaPlacements(count, length, body.length, body.width, body.bend, crystal, form.taper);
-  ciliaCache.set(key, placed);
+  let placed = ciliaCache.get(key);
+  if (!placed) {
+    if (ciliaCache.size > 48) ciliaCache.clear();
+    const body = cellDimensions(form.scale, form.elongation, form.girth, form.crescent);
+    placed = ciliaPlacements(count, length, body.length, body.width, body.bend, crystal, form.taper);
+    ciliaCache.set(key, placed);
+  }
+  const taper = form.taper;
+  ciliaRecent.push({
+    count,
+    length,
+    crystal,
+    scale: form.scale,
+    elongation: form.elongation,
+    girth: form.girth,
+    crescent: form.crescent,
+    mask: taper.mask,
+    polar: taper.polar,
+    antipolar: taper.antipolar,
+    lateral: taper.lateral,
+    antilateral: taper.antilateral,
+    placed,
+  });
+  if (ciliaRecent.length > 4) ciliaRecent.shift();
   return placed;
 }
+
+type PiliRecent = {
+  count: number;
+  length: number;
+  variance: number;
+  site: PilusSite;
+  crystal: boolean;
+  scale: number;
+  elongation: number;
+  girth: number;
+  crescent: number;
+  mask: number;
+  polar: number;
+  antipolar: number;
+  lateral: number;
+  antilateral: number;
+  placed: PilusSnapshot[];
+};
+const piliRecent: PiliRecent[] = [];
 
 function piliFor(
   form: CellForm = playerForm(),
@@ -780,14 +1028,47 @@ function piliFor(
   variance = piliVariance,
   site: PilusSite = pilusSite,
 ): PilusSnapshot[] {
+  for (let index = piliRecent.length - 1; index >= 0; index -= 1) {
+    const recent = piliRecent[index];
+    if (
+      recent.count === count &&
+      recent.length === length &&
+      recent.variance === variance &&
+      recent.site === site &&
+      recent.crystal === crystal &&
+      formSame(form, recent.scale, recent.elongation, recent.girth, recent.crescent, recent.mask, recent.polar, recent.antipolar, recent.lateral, recent.antilateral)
+    ) {
+      return recent.placed;
+    }
+  }
   const key = `${count}|${length}|${variance}|${site}|${formKey(form)}|${crystal ? 1 : 0}`;
-  const cached = piliCache.get(key);
-  if (cached) return cached;
-  if (piliCache.size > 48) piliCache.clear();
-  const body = cellDimensions(form.scale, form.elongation, form.girth, form.crescent);
-  const placedCount = Math.min(count, maxPiliOnSite(PILI_MAX, site));
-  const placed = piliPlacements(placedCount, length, variance, site, body.length, body.width, body.bend, crystal, form.taper);
-  piliCache.set(key, placed);
+  let placed = piliCache.get(key);
+  if (!placed) {
+    if (piliCache.size > 48) piliCache.clear();
+    const body = cellDimensions(form.scale, form.elongation, form.girth, form.crescent);
+    const placedCount = Math.min(count, maxPiliOnSite(PILI_MAX, site));
+    placed = piliPlacements(placedCount, length, variance, site, body.length, body.width, body.bend, crystal, form.taper);
+    piliCache.set(key, placed);
+  }
+  const taper = form.taper;
+  piliRecent.push({
+    count,
+    length,
+    variance,
+    site,
+    crystal,
+    scale: form.scale,
+    elongation: form.elongation,
+    girth: form.girth,
+    crescent: form.crescent,
+    mask: taper.mask,
+    polar: taper.polar,
+    antipolar: taper.antipolar,
+    lateral: taper.lateral,
+    antilateral: taper.antilateral,
+    placed,
+  });
+  if (piliRecent.length > 4) piliRecent.shift();
   return placed;
 }
 
@@ -994,6 +1275,87 @@ antilateralSlider.addEventListener("input", () => {
   antilateralReadout.textContent = antilateralFlagellin.toFixed(2);
 });
 
+// Genome flagellin: expressed constructs replace the debug sliders, which are
+// zeroed and disabled while the genome is driving flagella.
+const flagellinControls: [HTMLInputElement, HTMLElement][] = [
+  [antipolarSlider, antipolarReadout],
+  [polarSlider, polarReadout],
+  [lateralSlider, lateralReadout],
+  [antilateralSlider, antilateralReadout],
+];
+let flagellarBeat: FlagellarBeatState = initialBeatState();
+// Whether the genome-driven motor is mid-whip this frame. The switch reads
+// whip edges as burst edges, so beats alternate clockwise runs with real
+// counterclockwise tumbles instead of chaining runs.
+let genomeBeatWhipping = false;
+let flagellarWhipping = true;
+const applyGenomeExpression = (timeSeconds: number, dtSeconds: number): void => {
+  const constructs = getGenome();
+  const totals = flagellinFromConstructs(constructs, timeSeconds);
+  antipolarFlagellin = totals.antipolar;
+  polarFlagellin = totals.polar;
+  lateralFlagellin = totals.lateral;
+  antilateralFlagellin = totals.antilateral;
+  // The genome owns undulation too: a flagellum only beats where motor protein
+  // is co-expressed, so a genome with no motor drives nothing but flopping.
+  // The motor fires in beats no matter how constant the expression is, and the
+  // beat cycle stretches with the expression level, so an always-on construct
+  // still moves the cell in stochastic bursts.
+  const motor = motorFromConstructs(constructs, timeSeconds);
+  const beat = stepFlagellarBeat(flagellarBeat, motorExpressionLevel(constructs, timeSeconds), dtSeconds);
+  flagellarBeat = beat.state;
+  undulationBySite = {
+    antipolar: motor.antipolar * beat.envelope,
+    polar: motor.polar * beat.envelope,
+    lateral: motor.lateral * beat.envelope,
+    antilateral: motor.antilateral * beat.envelope,
+  };
+  undulation = Math.max(
+    undulationBySite.antipolar,
+    undulationBySite.polar,
+    undulationBySite.lateral,
+    undulationBySite.antilateral,
+  );
+  genomeBeatWhipping = undulation > 0.02;
+};
+let genomeDrivesFlagellinState = false;
+const syncGenomeFlagellin = (): void => {
+  const constructs = getGenome();
+  // Potential-based check: an oscillatory construct resting at its trough must
+  // not hand the flagella back to the sandbox sliders for a moment.
+  if (genomeCanDriveFlagellin(constructs)) {
+    genomeDrivesFlagellinState = true;
+    applyGenomeExpression(performance.now() / 1000, 0);
+    for (const [slider, readout] of flagellinControls) {
+      slider.value = "0";
+      slider.disabled = true;
+      slider.title = "Driven by expressed flagellin in the genome";
+      readout.textContent = "0.00";
+    }
+    undulationSlider.value = "0";
+    undulationSlider.disabled = true;
+    undulationSlider.title = "Driven by expressed flagellar motor protein in the genome";
+    undulationReadout.textContent = "0.00×";
+    return;
+  }
+  genomeDrivesFlagellinState = false;
+  for (const [slider] of flagellinControls) {
+    slider.disabled = false;
+    slider.title = "";
+  }
+  antipolarFlagellin = clamp(Number(antipolarSlider.value), 0, 1);
+  polarFlagellin = clamp(Number(polarSlider.value), 0, 1);
+  lateralFlagellin = clamp(Number(lateralSlider.value), 0, 1);
+  antilateralFlagellin = clamp(Number(antilateralSlider.value), 0, 1);
+  undulationBySite = null;
+  undulationSlider.disabled = false;
+  undulationSlider.title = "";
+  undulation = clamp(Number(undulationSlider.value), 0, 2);
+  undulationReadout.textContent = `${undulation.toFixed(2)}×`;
+};
+subscribeGenome(syncGenomeFlagellin);
+syncGenomeFlagellin();
+
 ciliationSlider.addEventListener("input", () => {
   ciliation = clamp(Math.round(Number(ciliationSlider.value)), 0, CILIATION_MAX);
   ciliationReadout.textContent = String(ciliation);
@@ -1112,6 +1474,8 @@ ccwButton.addEventListener("click", () => {
   ccwButton.classList.toggle("active", ccwSwitching);
   ccwButton.setAttribute("aria-pressed", String(ccwSwitching));
 });
+ccwButton.classList.add("active");
+ccwButton.setAttribute("aria-pressed", "true");
 
 wasdButton.addEventListener("click", () => {
   wasdEnabled = !wasdEnabled;
@@ -1231,6 +1595,12 @@ speciesName.title = ownedSpecies;
 
 speciesPrev.addEventListener("click", () => focusSpecies(-1));
 speciesNext.addEventListener("click", () => focusSpecies(1));
+for (const button of [speciesPrev, speciesNext]) {
+  button.addEventListener("pointerenter", () => {
+    if (!button.disabled) playCue("hover");
+  });
+  button.addEventListener("click", () => playCue("step"));
+}
 
 applyAllButton.addEventListener("click", () => {
   applyAll = !applyAll;
@@ -1369,6 +1739,7 @@ saveButton.addEventListener("click", () => {
   void renderer.saveTerrain().then((result) => {
     terrainStatus.textContent =
       result === "saved" ? "Saved" : result === "loading" ? "Terrain is still loading" : "Save failed";
+    playCue(result === "saved" ? "confirm" : result === "loading" ? "deny" : "alarm");
   });
 });
 
@@ -1415,11 +1786,13 @@ canvas.addEventListener("pointerup", endEdit);
 canvas.addEventListener("pointercancel", endEdit);
 canvas.addEventListener("pointermove", (event) => {
   inspect.pointer(event.clientX, event.clientY);
-  if (!editMode) canvas.style.cursor = inspect.hovering() ? "pointer" : "";
+  environmentProbe.pointer(event.clientX, event.clientY);
+  if (!editMode) setCanvasCursor(hoverCursor());
 });
 canvas.addEventListener("pointerleave", () => {
   inspect.pointerLeave();
-  if (!editMode) canvas.style.cursor = "";
+  environmentProbe.pointerLeave();
+  if (!editMode) setCanvasCursor(hoverCursor());
 });
 canvas.addEventListener("pointerdown", (event) => {
   if (editMode || event.button !== 0) return;
@@ -1430,11 +1803,17 @@ const session = new SimulationSession((status) => {
 });
 
 initDock();
-onEnvironmentVisible((visible) => renderer.setNutrientsVisible(visible));
+onEnvironmentVisible((visible) => {
+  environmentOn = visible;
+  renderer.setNutrientsVisible(visible);
+  environmentProbe.setEnabled(visible);
+  if (!editMode) setCanvasCursor(hoverCursor());
+});
 initGenomeViewer();
 initExpression();
 initGenomeEditor();
 void loadGenomeState();
+void loadUnlocks();
 initTechTree();
 initCodex();
 initPlayer();
@@ -1487,6 +1866,11 @@ function fillDecorTypes(): void {
 
 let last = performance.now();
 let sunOrigin: number | null = null;
+
+function sunElapsed(now: number): number {
+  if (sunOrigin === null) sunOrigin = now;
+  return (now - sunOrigin) / 1000 + sunShiftSeconds;
+}
 let booted = false;
 let worldReadyAt: number | null = null;
 let showingTitle = true;
@@ -1591,6 +1975,7 @@ function randomDrive(rng: () => number, flagellarSites: ReadonlyArray<(typeof ME
     piliVariance: rng(),
     pilusSite: site,
     undulation: spanPick(rng, 0.35, 2),
+    undulationBySite: null,
     pulse: rng() < 0.22 ? 1 : spanPick(rng, 0.2, 0.92),
     ccw: rng() < 0.5,
   };
@@ -1834,6 +2219,9 @@ function frame(now: number): void {
   fillDecorTypes();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  // Genome expression drives the flagella every frame: oscillatory promoters
+  // swing the protein level, and the motor beat pulses even at constant levels.
+  if (genomeDrivesFlagellinState) applyGenomeExpression(now / 1000, dt);
   const sample = session.sample();
   const view = sceneView(sample);
   if (!booted && renderer.worldReady()) {
@@ -1843,7 +2231,6 @@ function frame(now: number): void {
       bootFinish();
     } else bootMark("session", 0.4);
   }
-  if (sunOrigin === null) sunOrigin = now;
   const playing = !titleScreenOpen();
   if (playing) {
     stepSurfaceFades(now);
@@ -1863,8 +2250,15 @@ function frame(now: number): void {
   if (showingTitle && !title) renderer.placeCamera(cell.x, cell.y);
   showingTitle = title;
   const camera: [number, number] = title ? titleGlance(now, view.pixels_per_unit) : [cell.x, cell.y];
+  renderer.setSmoothCamera(title);
   updatePosition(cell.x, cell.y);
-  debug.follow(sunCycle((now - sunOrigin) / 1000));
+  const elapsed = sunElapsed(now);
+  debug.follow(sunCycle(elapsed));
+  const clock = formatTimeOfDay(elapsed);
+  if (clock !== shownTime) {
+    shownTime = clock;
+    timeLabel.textContent = clock;
+  }
   renderer.setSunBrightness(debug.brightness());
   const intensity = debug.brightness() * columnAttenuation(title ? camera[1] : cell.y);
   debug.showBrightness(intensity);
@@ -1873,9 +2267,10 @@ function frame(now: number): void {
     : [cell, ...siblings.map((sibling) => siblingSnapshot(sibling, now))];
   renderer.render(view, drawn, dt, debug.direction(), intensity, camera);
   refreshSpecies();
-  inspect.update([playerCellTarget(cell), ...renderer.inspectFeatures()]);
+  publishInspect(cell);
   syncExpressionCell(cell);
-  if (!editMode && canvas) canvas.style.cursor = inspect.hovering() ? "pointer" : "";
+  environmentProbe.refresh();
+  if (!editMode && canvas) setCanvasCursor(hoverCursor());
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1924,18 +2319,56 @@ function isControlKey(code: string): boolean {
   );
 }
 
+/** How far a pre-tumble nudge pushes the cell off a wall it pressed into. */
+const TUMBLE_CLEARANCE_UNITS = 0.12;
+
+/**
+ * Before a beat tumble starts rotating the cell, push the body slightly off
+ * any terrain it pressed into during the run, so the tumble turns in free
+ * water instead of grinding against the collider. fitPose slides or halts the
+ * nudge when the away direction runs into other terrain.
+ */
+function nudgeOffTerrain(): void {
+  const length = cellLength();
+  const width = cellWidth();
+  const bend = cellBend();
+  const toward = renderer.stickDirection(pose.x, pose.y, pose.angle, length, width, bend);
+  if (!toward) return;
+  const previous = { x: pose.x, y: pose.y, angle: pose.angle, length };
+  const target = {
+    x: pose.x - toward.x * TUMBLE_CLEARANCE_UNITS,
+    y: pose.y - toward.y * TUMBLE_CLEARANCE_UNITS,
+    angle: pose.angle,
+    length,
+  };
+  const fitted = renderer.fitPose(previous, target, width, bend);
+  pose.x = fitted.x;
+  pose.y = fitted.y;
+}
+
 function stepControlled(dt: number): void {
   if (controlledMotilityRest > 0) {
     controlledMotilityRest = Math.max(0, controlledMotilityRest - dt);
     if (wasdEnabled) steerManual(dt);
     else {
       const yaw = ((held.has("KeyQ") ? TURN_SPEED : 0) - (held.has("KeyE") ? TURN_SPEED : 0)) * dt;
-      cruise(pose, swim, flagellarPulse, flagellarSwitch, playerForm(), dt, false, yaw, false);
+      cruise(pose, swim, flagellarPulse, flagellarSwitch, fillPlayerForm(), dt, false, yaw, false);
     }
   } else {
     const wasSwimming = flagellarPulse.swimming;
     flagellarPulse = stepFlagellarPulse(flagellarPulse, pulse, dt, controlledPulseScale);
-    flagellarSwitch = stepFlagellarSwitch(flagellarSwitch, ccwSwitching, wasSwimming, flagellarPulse.swimming);
+    // A genome-driven flagellum bursts per beat. Sandbox mode keeps drawing
+    // the switch sense from the pulse slider's swim edges; genome mode draws
+    // it from the whip edges, so every whip is a clockwise run and every rest
+    // between whips is a counterclockwise tumble.
+    const wasWhipping = flagellarWhipping;
+    flagellarWhipping = flagellarPulse.swimming && (!genomeDrivesFlagellinState || genomeBeatWhipping);
+    flagellarSwitch = genomeDrivesFlagellinState
+      ? stepBeatSwitch(flagellarSwitch, ccwSwitching, wasWhipping, flagellarWhipping)
+      : stepFlagellarSwitch(flagellarSwitch, ccwSwitching, wasWhipping, flagellarPulse.swimming);
+    // A tumble drawn at the whip's end starts from a nudge off the wall the
+    // run may have pressed the cell into, then rotates in the cleared space.
+    if (genomeDrivesFlagellinState && ccwSwitching && wasWhipping && !flagellarWhipping) nudgeOffTerrain();
     steer(dt, wasSwimming);
   }
 }
@@ -1968,7 +2401,7 @@ function steer(dt: number, wasSwimming: boolean): void {
     return;
   }
   const yaw = ((held.has("KeyQ") ? TURN_SPEED : 0) - (held.has("KeyE") ? TURN_SPEED : 0)) * dt;
-    cruise(pose, swim, flagellarPulse, flagellarSwitch, playerForm(), dt, wasSwimming, yaw, true, controlledCiliaPresence);
+    cruise(pose, swim, flagellarPulse, flagellarSwitch, fillPlayerForm(), dt, wasSwimming, yaw, true, controlledCiliaPresence);
 }
 
 function steerManual(dt: number): void {
@@ -2004,31 +2437,57 @@ function steerManual(dt: number): void {
   pose.length = cellLength();
 }
 
+const driveScratch: CellDrive = {
+  buoyin: 0,
+  ballastin: 0,
+  lubricin: 0,
+  adhesin: 0,
+  antipolar: 0,
+  polar: 0,
+  lateral: 0,
+  antilateral: 0,
+  ciliation: 0,
+  ciliaLength: 0,
+  ciliaSpeed: 0,
+  ciliaSway: 0,
+  ciliaOrder: 0,
+  ciliaSwitch: "lateral",
+  ciliaReverse: false,
+  piliCount: 0,
+  piliLength: 0,
+  piliVariance: 0,
+  pilusSite: "all",
+  undulation: 0,
+  undulationBySite: null,
+  pulse: 0,
+  ccw: false,
+};
+
 function playerDrive(): CellDrive {
-  return {
-    buoyin,
-    ballastin,
-    lubricin,
-    adhesin,
-    antipolar: antipolarFlagellin,
-    polar: polarFlagellin,
-    lateral: lateralFlagellin,
-    antilateral: antilateralFlagellin,
-    ciliation,
-    ciliaLength,
-    ciliaSpeed,
-    ciliaSway,
-    ciliaOrder,
-    ciliaSwitch,
-    ciliaReverse,
-    piliCount,
-    piliLength,
-    piliVariance,
-    pilusSite,
-    undulation,
-    pulse,
-    ccw: ccwSwitching,
-  };
+  driveScratch.buoyin = buoyin;
+  driveScratch.ballastin = ballastin;
+  driveScratch.lubricin = lubricin;
+  driveScratch.adhesin = adhesin;
+  driveScratch.antipolar = antipolarFlagellin;
+  driveScratch.polar = polarFlagellin;
+  driveScratch.lateral = lateralFlagellin;
+  driveScratch.antilateral = antilateralFlagellin;
+  driveScratch.ciliation = ciliation;
+  driveScratch.ciliaLength = ciliaLength;
+  driveScratch.ciliaSpeed = ciliaSpeed;
+  driveScratch.ciliaSway = ciliaSway;
+  driveScratch.ciliaOrder = ciliaOrder;
+  driveScratch.ciliaSwitch = ciliaSwitch;
+  driveScratch.ciliaReverse = ciliaReverse;
+  driveScratch.piliCount = piliCount;
+  driveScratch.piliLength = piliLength;
+  driveScratch.piliVariance = piliVariance;
+  driveScratch.pilusSite = pilusSite;
+  driveScratch.undulation = undulation;
+  driveScratch.undulationBySite = undulationBySite;
+  driveScratch.pulse = pulse;
+  driveScratch.ccw = ccwSwitching;
+  return driveScratch;
 }
 
 /** Same swim, tumble, recoil, and terrain collision the controlled cell uses. */
@@ -2064,6 +2523,7 @@ function cruise(
       lateral: drive.lateral,
       antilateral: drive.antilateral,
       undulation: swimming && flagellar.clockwise ? drive.undulation : 0,
+      undulationBySite: drive.undulationBySite && swimming && flagellar.clockwise ? drive.undulationBySite : undefined,
       motors: swimming && drive.undulation > 0.02 && flagellarSum > 0.02,
       ciliation: thrust ? drive.ciliation : 0,
       ciliaLength: drive.ciliaLength * ciliaAmount,
@@ -2188,6 +2648,7 @@ function siblingSnapshot(cell: SimulatedCell, now: number): CellSnapshot {
     capsule: 0,
     motor: cell.motilityRest > 0 ? "idle" : motorOf(cell.pulse, cell.flagellar),
     activity: cell.motilityRest > 0 || !cell.pulse.swimming ? 0 : undulation,
+    activityBySite: cell.motilityRest > 0 || !cell.pulse.swimming || !undulationBySite ? undefined : undulationBySite,
     ciliaSpeed: cell.motilityRest > 0 ? 0 : ciliaSpeed,
     ciliaSway: ciliaSway * cell.ciliaPresence,
     ciliaCover: cell.ciliaPresence,
@@ -2207,8 +2668,38 @@ function siblingSnapshot(cell: SimulatedCell, now: number): CellSnapshot {
   };
 }
 
+let positionText = "";
+let canvasCursor = "";
+const inspectTargets: ReturnType<typeof playerCellTarget>[] = [];
+
+function setCanvasCursor(next: string): void {
+  if (!canvas || next === canvasCursor) return;
+  canvasCursor = next;
+  canvas.style.cursor = next;
+}
+
+function hoverCursor(): string {
+  if (editMode) return "crosshair";
+  if (inspect.hovering()) return "pointer";
+  if (environmentOn) return "crosshair";
+  return "";
+}
+
+function publishInspect(cell: CellSnapshot): void {
+  const features = renderer.inspectFeatures();
+  const count = features.length + 1;
+  if (inspectTargets.length !== count) inspectTargets.length = count;
+  inspectTargets[0] = playerCellTarget(cell);
+  for (let index = 0; index < features.length; index += 1) inspectTargets[index + 1] = features[index];
+  inspect.update(inspectTargets);
+}
+
 function updatePosition(x: number, y: number): void {
-  positionReadout.textContent = `X ${formatCoord(x)}  Y ${formatCoord(y)}; ${texelIdAt(x, y) ?? "—"}; ${renderer.zoomLevel().toFixed(2)}×`;
+  if (positionReadout.hidden) return;
+  const text = `X ${formatCoord(x)}  Y ${formatCoord(y)}; ${texelIdAt(x, y) ?? "—"}; ${renderer.zoomLevel().toFixed(2)}×`;
+  if (text === positionText) return;
+  positionText = text;
+  positionReadout.textContent = text;
 }
 
 function formatCoord(value: number): string {
@@ -2328,6 +2819,7 @@ const finishDivision = (): void => {
   controlledPiliFade = grownPili.fade;
   setShapeEnabled(true);
   refreshDivideControls();
+  playCue("level");
 };
 
 function finishSiblingDivision(cell: SimulatedCell): void {
@@ -2347,6 +2839,7 @@ function finishSiblingDivision(cell: SimulatedCell): void {
   cell.ciliaFade = grown.fade;
   cell.piliPresence = grownPili.presence;
   cell.piliFade = grownPili.fade;
+  playCue("level");
 }
 
 function advanceSiblingDivisions(now: number): void {
@@ -2545,6 +3038,9 @@ function flagellarMotor(): "idle" | "run" | "tumble" {
   return motorOf(flagellarPulse, flagellarSwitch);
 }
 
+/** Flail animation strength for the genome's between-whip tumble, where undulation rests at zero. */
+const TUMBLE_FLAIL_ACTIVITY = 0.35;
+
 function controlledCell(
   divisionPose: {
     furrow: number;
@@ -2554,6 +3050,10 @@ function controlledCell(
     divisionPlace: number;
   } = { furrow: 0, furrowAxis: 0, morph: 0, divisionShift: 0, divisionPlace: 0 },
 ): CellSnapshot {
+  // The genome's tumble lives in the rest between whips, where undulation is
+  // zero; report it anyway so the flagella flail while the cell rotates.
+  const genomeTumbling =
+    genomeDrivesFlagellinState && ccwSwitching && flagellarPulse.swimming && !flagellarSwitch.clockwise;
   return {
     id: controlledId,
     x: pose.x,
@@ -2575,8 +3075,12 @@ function controlledCell(
     capsule: 0,
     // A clockwise burst whips. A counterclockwise burst flails instead.
     // Off the pulse, or at undulation 0, the tail trails as a loose chain.
-    motor: controlledMotilityRest > 0 ? "idle" : flagellarMotor(),
-    activity: controlledMotilityRest > 0 || !flagellarPulse.swimming ? 0 : undulation,
+    motor: controlledMotilityRest > 0 ? "idle" : genomeTumbling ? "tumble" : flagellarMotor(),
+    activity: controlledMotilityRest > 0 || !flagellarPulse.swimming ? 0 : genomeTumbling ? TUMBLE_FLAIL_ACTIVITY : undulation,
+    activityBySite:
+      controlledMotilityRest > 0 || !flagellarPulse.swimming || !undulationBySite || genomeTumbling
+        ? undefined
+        : undulationBySite,
     ciliaSpeed: controlledMotilityRest > 0 ? 0 : ciliaSpeed,
     ciliaSway: ciliaSway * controlledCiliaPresence,
     ciliaCover: controlledCiliaPresence,
@@ -2602,10 +3106,14 @@ function cellLabel(id: number): string {
   return `Cell ${String(id).padStart(3, "0")}`;
 }
 
+let speciesKey = "";
 function refreshSpecies(): void {
   const count = lineage.length;
   const place = Math.max(0, lineage.indexOf(controlledId)) + 1;
   const label = cellLabel(controlledId);
+  const key = `${controlledId}:${count}:${place}`;
+  if (key === speciesKey) return;
+  speciesKey = key;
   speciesCount!.textContent = label;
   speciesCount!.title = count === 1 ? label : `${label}, individual ${place} of ${count}`;
   speciesPlate!.setAttribute(

@@ -1,6 +1,24 @@
 import { GENES, type GeneRecord } from "./genes";
-import { geneById, getGenome, promoterById, subscribeGenome, tagById, type Cassette } from "./genomeState";
-import { createUiSound, playUiSound, UI_SELECT } from "./uiSound";
+import {
+  amountById,
+  amountRange,
+  applySnapshot,
+  behaviorLine,
+  cassetteAtpCost,
+  cassetteMutationCost,
+  CYTOSOLIC_ICON,
+  geneById,
+  getGenome,
+  persistGenome,
+  promoterById,
+  regulatoryIcon,
+  removeCassette,
+  snapshot,
+  subscribeGenome,
+  tagById,
+  type Cassette,
+} from "./genomeState";
+import { playCue } from "./uiSound";
 
 const SHEET_URL = "/ui/genome_viewer/DNA_Pixel_Grooves_32_Frames_Long.png";
 const HELIX_PART_URL = {
@@ -23,10 +41,6 @@ const PARTS = ["spacer", "promoter", "coding", "terminator"] as const;
 
 export function initGenomeViewer(): void {
   const viewer = document.querySelector<HTMLElement>("#genome-viewer");
-  const viewerPane = document.querySelector<HTMLElement>("#genome-viewer-pane");
-  const editorPane = document.querySelector<HTMLElement>("#genome-editor-pane");
-  const viewerMode = document.querySelector<HTMLButtonElement>("#genome-mode-viewer");
-  const editorMode = document.querySelector<HTMLButtonElement>("#genome-mode-editor");
   const list = document.querySelector<HTMLUListElement>("#genome-gene-list");
   const search = document.querySelector<HTMLInputElement>("#genome-gene-search");
   const categories = document.querySelector<HTMLElement>("#genome-category-tabs");
@@ -43,7 +57,7 @@ export function initGenomeViewer(): void {
   const viewForward = document.querySelector<HTMLButtonElement>("#genome-scroll-forward");
   const viewOut = document.querySelector<HTMLButtonElement>("#genome-scroll-out");
   const viewIn = document.querySelector<HTMLButtonElement>("#genome-scroll-in");
-  if (!viewer || !viewerPane || !editorPane || !viewerMode || !editorMode || !list || !search || !categories || !categoryLabel || !empty || !detail || !browser || !canvas || !map || !segments || !viewWindow || !viewLabel || !viewBack || !viewForward || !viewOut || !viewIn) {
+  if (!viewer || !list || !search || !categories || !categoryLabel || !empty || !detail || !browser || !canvas || !map || !segments || !viewWindow || !viewLabel || !viewBack || !viewForward || !viewOut || !viewIn) {
     throw new Error("missing genome viewer");
   }
   viewer.addEventListener("pointerdown", (event) => {
@@ -53,21 +67,76 @@ export function initGenomeViewer(): void {
     event.stopPropagation();
   });
 
-  const clickSound = createUiSound(UI_SELECT);
-  const showMode = (mode: "viewer" | "editor"): void => {
-    viewerPane.hidden = mode !== "viewer";
-    editorPane.hidden = mode !== "editor";
-    viewerMode.setAttribute("aria-selected", String(mode === "viewer"));
-    editorMode.setAttribute("aria-selected", String(mode === "editor"));
+  const confirmRoot = document.createElement("div");
+  confirmRoot.className = "genome-confirm";
+  confirmRoot.hidden = true;
+  confirmRoot.setAttribute("role", "dialog");
+  confirmRoot.setAttribute("aria-modal", "true");
+  confirmRoot.setAttribute("aria-label", "Delete gene confirmation");
+  const confirmCard = document.createElement("div");
+  confirmCard.className = "genome-confirm-card";
+  const confirmTitle = document.createElement("h3");
+  confirmTitle.className = "genome-confirm-title";
+  confirmTitle.textContent = "Delete gene";
+  const confirmCopy = document.createElement("p");
+  confirmCopy.className = "genome-confirm-copy";
+  const confirmActions = document.createElement("div");
+  confirmActions.className = "genome-confirm-actions";
+  const confirmCancel = document.createElement("button");
+  confirmCancel.type = "button";
+  confirmCancel.className = "genome-mode-tab";
+  confirmCancel.textContent = "Cancel";
+  const confirmDelete = document.createElement("button");
+  confirmDelete.type = "button";
+  confirmDelete.className = "genome-mode-tab genome-confirm-delete";
+  confirmDelete.textContent = "Delete";
+  confirmActions.append(confirmCancel, confirmDelete);
+  confirmCard.append(confirmTitle, confirmCopy, confirmActions);
+  confirmRoot.append(confirmCard);
+  viewer.append(confirmRoot);
+
+  let confirmTarget: Cassette | null = null;
+  let lastDeleteButton: HTMLButtonElement | null = null;
+  const closeConfirm = (): void => {
+    confirmRoot.hidden = true;
+    confirmTarget = null;
+    if (lastDeleteButton && lastDeleteButton.isConnected) {
+      lastDeleteButton.focus();
+    }
   };
-  viewerMode.addEventListener("click", () => {
-    showMode("viewer");
-    playUiSound(clickSound);
+  confirmCancel.addEventListener("click", () => {
+    playCue("back");
+    closeConfirm();
   });
-  editorMode.addEventListener("click", () => {
-    showMode("editor");
-    playUiSound(clickSound);
+  confirmRoot.addEventListener("pointerdown", (event) => {
+    if (event.target !== confirmRoot) return;
+    playCue("back");
+    closeConfirm();
   });
+  viewer.addEventListener("keydown", (event) => {
+    if (confirmRoot.hidden || event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    playCue("back");
+    closeConfirm();
+  });
+  confirmDelete.addEventListener("click", () => {
+    const cassette = confirmTarget;
+    if (!cassette) return;
+    const restore = snapshot();
+    confirmRoot.hidden = true;
+    confirmTarget = null;
+    removeCassette(cassette.uid);
+    void persistGenome().then((saved) => {
+      if (!saved) {
+        applySnapshot(restore);
+        playCue("alarm");
+        return;
+      }
+      playCue("success");
+    });
+  });
+
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const image = new Image();
   image.src = SHEET_URL;
@@ -109,7 +178,7 @@ export function initGenomeViewer(): void {
   let layout = layoutGenome(getGenome());
   const marks: HTMLElement[] = [];
 
-  const showGene = (gene: GeneRecord, cassette: Cassette): void => {
+  const showGene = (gene: GeneRecord, cassette: Cassette, index: number): void => {
     detail.classList.remove("is-empty");
     const name = document.createElement("h3");
     name.className = "genome-detail-name";
@@ -124,20 +193,68 @@ export function initGenomeViewer(): void {
     const frame = document.createElement("figure");
     frame.className = "genome-detail-protein";
     const protein = document.createElement("img");
-    protein.src = `/ui/genome_viewer/proteins/named/individuals/${gene.id}.png`;
+    protein.src = `/ui/genome_viewer/proteins/individuals/${gene.id}.png`;
     protein.alt = gene.name;
     frame.append(protein);
-    const blocks: HTMLElement[] = [frame, name, meta, copy];
-    const routeName = cassette.routeId ? tagById(cassette.routeId)?.name : undefined;
-    const siteName = cassette.siteId ? tagById(cassette.siteId)?.name : undefined;
-    if (cassette.promoterId !== "CNST" || routeName || siteName) {
-      const line = document.createElement("p");
-      line.className = "genome-detail-meta";
-      const promoter = promoterById(cassette.promoterId)?.name ?? cassette.promoterId;
-      line.textContent = [promoter, routeName, siteName].filter(Boolean).join("  ·  ");
-      blocks.push(line);
+    const bar = document.createElement("div");
+    bar.className = "genome-detail-bar";
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "genome-mode-tab";
+    deleteButton.textContent = "Delete Gene";
+    lastDeleteButton = deleteButton;
+    deleteButton.addEventListener("pointerenter", () => playCue("hover"));
+    deleteButton.addEventListener("click", () => {
+      confirmCopy.textContent = `Remove ${cassette.name} (${code}) from the genome? The cell will stop producing it. This cannot be undone.`;
+      confirmTarget = cassette;
+      confirmRoot.hidden = false;
+      playCue("button");
+      confirmCancel.focus();
+    });
+    bar.append(deleteButton);
+    const blocks: HTMLElement[] = [bar, frame, name, meta, copy];
+
+    const behavior = document.createElement("p");
+    behavior.className = "genome-detail-copy";
+    behavior.textContent = behaviorLine(cassette);
+    blocks.push(behavior);
+
+    const assemblyLabel = document.createElement("p");
+    assemblyLabel.className = "genome-detail-meta";
+    assemblyLabel.textContent = `Assembly · slot ${index + 1} of ${getGenome().length}`;
+    blocks.push(assemblyLabel);
+    const recipe = document.createElement("div");
+    recipe.className = "genome-detail-recipe";
+    for (const tile of cassetteTiles(gene, cassette)) {
+      const cell = document.createElement("figure");
+      cell.className = "genome-detail-tile";
+      const icon = document.createElement("img");
+      icon.src = tile.icon;
+      icon.alt = "";
+      const kind = document.createElement("span");
+      kind.className = "genome-detail-tile-kind";
+      kind.textContent = tile.kind;
+      const tileName = document.createElement("span");
+      tileName.className = "genome-detail-tile-name";
+      tileName.textContent = tile.name;
+      cell.append(icon, kind, tileName);
+      recipe.append(cell);
     }
+    blocks.push(recipe);
+
+    const costs = document.createElement("p");
+    costs.className = "genome-detail-meta";
+    costs.textContent = `Costs · ATP upkeep ${cassetteAtpCost(cassette)}/s  ·  assembly ${cassetteMutationCost(cassette)} MP`;
+    blocks.push(costs);
     detail.replaceChildren(...blocks);
+  };
+
+  const showEmptyDetail = (): void => {
+    detail.classList.add("is-empty");
+    const message = document.createElement("p");
+    message.className = "genome-detail-empty";
+    message.textContent = "Select a gene";
+    detail.replaceChildren(message);
   };
 
   let categoryFilter = "";
@@ -166,7 +283,7 @@ export function initGenomeViewer(): void {
       categoryLabel.textContent = category === "" ? "All genes" : category;
       for (const other of categoryTabs) other.setAttribute("aria-selected", String(other === tab));
       applyFilter();
-      playUiSound(clickSound);
+      playCue("tab");
     });
     categoryTabs.push(tab);
     categories.append(tab);
@@ -473,7 +590,7 @@ export function initGenomeViewer(): void {
     selected = button;
     selectedIndex = index;
     button.setAttribute("aria-pressed", "true");
-    showGene(gene, cassette);
+    showGene(gene, cassette, index);
     item?.scrollIntoView({ block: "nearest" });
   };
 
@@ -514,12 +631,12 @@ export function initGenomeViewer(): void {
   viewBack.addEventListener("click", () => {
     setView(viewStart - 1, "scroll");
     selectGene(focusedGene());
-    playUiSound(clickSound);
+    playCue("step");
   });
   viewForward.addEventListener("click", () => {
     setView(viewStart + 1, "scroll");
     selectGene(focusedGene());
-    playUiSound(clickSound);
+    playCue("step");
   });
   const zoomBy = (factor: number): void => {
     const center = viewStart + (viewSpan - 1) / 2;
@@ -530,17 +647,17 @@ export function initGenomeViewer(): void {
   };
   viewOut.addEventListener("click", () => {
     zoomBy(1 / 0.72);
-    playUiSound(clickSound);
+    playCue("step");
   });
   viewIn.addEventListener("click", () => {
     zoomBy(0.72);
-    playUiSound(clickSound);
+    playCue("step");
   });
   map.addEventListener("pointerdown", (event) => {
     if (event.target === viewWindow) return;
     setView(geneAt(event.clientX) - Math.floor(viewSpan / 2));
     selectGene(focusedGene());
-    playUiSound(clickSound);
+    playCue("select");
   });
   viewWindow.addEventListener("pointerdown", (event) => {
     event.preventDefault();
@@ -604,7 +721,7 @@ export function initGenomeViewer(): void {
         const travel = nextIndex - selectedIndex;
         selectGene(nextIndex);
         setView(nextIndex - Math.floor(viewSpan / 2), "in-out", travel);
-        playUiSound(clickSound);
+        playCue("select");
       });
       geneButtons.push(button);
       geneItems.push(item);
@@ -625,8 +742,10 @@ export function initGenomeViewer(): void {
     const minSpan = Math.min(viewSpan, count);
     if (visibleSpan < minSpan || visibleSpan > count) visibleSpan = count;
     const focusIndex = keep === null || count === 0 ? null : Math.min(count - 1, Math.max(0, keep));
+    if (count === 0) selectedIndex = 0;
     setView(focusIndex === null ? viewStart : focusIndex - Math.floor(viewSpan / 2), focus === null || viewer.hidden ? "none" : "in-out");
     if (focusIndex !== null) selectGene(focusIndex);
+    else if (count === 0) showEmptyDetail();
     applyFilter();
   };
   fillGenome(null);
@@ -640,6 +759,39 @@ export function initGenomeViewer(): void {
   new MutationObserver(start).observe(viewer, { attributes: true, attributeFilter: ["hidden"] });
   document.addEventListener("visibilitychange", start);
   start();
+}
+
+type CassetteTile = { kind: string; name: string; icon: string };
+
+/** Every tile the editor used to assemble the cassette, in bench order. */
+function cassetteTiles(gene: GeneRecord, cassette: Cassette): CassetteTile[] {
+  const tiles: CassetteTile[] = [];
+  const push = (kind: string, name: string, icon: string | null): void => {
+    tiles.push({ kind, name, icon: icon ?? CYTOSOLIC_ICON });
+  };
+  push("Promoter", promoterById(cassette.promoterId)?.name ?? cassette.promoterId, regulatoryIcon(cassette.promoterId));
+  if (amountRange(cassette.promoterId)) {
+    const ranged: readonly (readonly [string | null, string])[] = [
+      [cassette.amountMinId, "Amount min"],
+      [cassette.amountMaxId, "Amount max"],
+    ];
+    for (const [id, kind] of ranged) {
+      if (!id) continue;
+      push(kind, amountById(id)?.name ?? id, regulatoryIcon(id));
+    }
+  } else if (cassette.amountId) {
+    push("Amount", amountById(cassette.amountId)?.name ?? cassette.amountId, regulatoryIcon(cassette.amountId));
+  }
+  push("Coding", gene.name, `/ui/genome_viewer/proteins/individuals_32x32/${gene.id}.png`);
+  const tagged: readonly (readonly [string | null, string])[] = [
+    [cassette.routeId, "Destination"],
+    [cassette.siteId, "Position"],
+  ];
+  for (const [id, kind] of tagged) {
+    if (!id) continue;
+    push(kind, tagById(id)?.name ?? id, regulatoryIcon(id));
+  }
+  return tiles;
 }
 
 function layoutGenome(entries: readonly { geneId: string }[]): {
@@ -725,7 +877,7 @@ function unwrapNear(angle: number, target: number): number {
 function categoryIcon(category: string): string | null {
   const slug = category.toLowerCase();
   if (!["metabolism", "homeostasis", "morphology", "motility", "perception", "regulation", "reproduction"].includes(slug)) return null;
-  return `/ui/genome_viewer/categories/32x32/${slug}_32x32.png`;
+  return `/ui/genome_viewer/categories/${slug}_32x32.png`;
 }
 
 function turnsForGenes(geneDelta: number): number {

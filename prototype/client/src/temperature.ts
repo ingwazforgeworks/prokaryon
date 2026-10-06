@@ -35,6 +35,7 @@ export class TemperatureField {
   private accumulator = 0;
   private time = 0;
   private brightness = 1;
+  private rockStamp = -1;
 
   constructor() {
     this.values.fill(AMBIENT);
@@ -52,9 +53,13 @@ export class TemperatureField {
     sunBrightness: number,
     ventPoints: ReadonlyArray<readonly [number, number]>,
     rock: Uint8Array,
+    rockStamp = -1,
   ): void {
     this.brightness = sunBrightness;
-    if (rock.length === COUNT) this.rock.set(rock);
+    if (rockStamp !== this.rockStamp && rock.length === COUNT) {
+      this.rock.set(rock);
+      this.rockStamp = rockStamp;
+    }
     this.accumulator += Math.min(Math.max(dt, 0), 0.1);
     let ticks = 0;
     while (this.accumulator >= THERMAL_DT && ticks < 2) {

@@ -1,4 +1,4 @@
-import { createUiSound, playUiSound, UI_HOVER, UI_SELECT } from "./uiSound";
+import { playCue } from "./uiSound";
 import {
   QUICK_RESOURCE_IDS,
   cellResources,
@@ -64,8 +64,6 @@ export function initResourceBar(): void {
     throw new Error("missing resource bar");
   }
 
-  const hoverSound = createUiSound(UI_HOVER);
-  const clickSound = createUiSound(UI_SELECT);
   const quickValues = new Map<string, HTMLElement>();
   const rows = new Map<string, Row>();
 
@@ -125,14 +123,14 @@ export function initResourceBar(): void {
     expand.setAttribute("aria-label", open ? "Hide resource pool" : "Show resource pool");
   };
 
-  expand.addEventListener("pointerenter", () => playUiSound(hoverSound));
-  close.addEventListener("pointerenter", () => playUiSound(hoverSound));
+  expand.addEventListener("pointerenter", () => playCue("hover"));
+  close.addEventListener("pointerenter", () => playCue("hover"));
   bar.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue(panel.hidden ? "open" : "close");
     setOpen(panel.hidden);
   });
   close.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("close");
     setOpen(false);
   });
   document.addEventListener("pointerdown", (event) => {
@@ -148,7 +146,7 @@ export function initResourceBar(): void {
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
     event.preventDefault();
     setOpen(false);
-    playUiSound(clickSound);
+    playCue("close");
   });
 
   onResources(paint);

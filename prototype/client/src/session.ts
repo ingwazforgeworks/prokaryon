@@ -8,6 +8,7 @@ export class SimulationSession {
   private offset = 0;
   private hasClock = false;
   private socket: WebSocket | null = null;
+  private retryMs = 500;
 
   constructor(private readonly onStatus: (status: string) => void) {}
 
@@ -20,7 +21,10 @@ export class SimulationSession {
     this.onStatus("connecting");
     const socket = new WebSocket(SOCKET_URL);
     this.socket = socket;
-    socket.onopen = () => this.onStatus("live");
+    socket.onopen = () => {
+      this.retryMs = 500;
+      this.onStatus("live");
+    };
     socket.onmessage = (event) => {
       const snap = JSON.parse(String(event.data)) as WorldSnapshot;
       if (!snap || snap.v !== 1 || !Array.isArray(snap.cells)) return;
@@ -32,10 +36,11 @@ export class SimulationSession {
       while (this.buffer.length > 2 && this.buffer[0].t < cutoff) this.buffer.shift();
     };
     socket.onclose = () => {
-      if (this.socket === socket) {
-        this.onStatus("reconnecting");
-        window.setTimeout(() => this.connect(), 500);
-      }
+      if (this.socket !== socket) return;
+      this.onStatus("reconnecting");
+      const wait = this.retryMs;
+      this.retryMs = Math.min(8000, this.retryMs * 2);
+      window.setTimeout(() => this.connect(), wait);
     };
   }
 

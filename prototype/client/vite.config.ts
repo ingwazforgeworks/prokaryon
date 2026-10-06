@@ -17,6 +17,8 @@ const brandingRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), 
 const editsFile = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "public/terrain-edits.json");
 const genomeStateFile = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "public/genome-state.json");
 const techLayoutFile = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "public/tech-layout.json");
+const techUnlocksFile = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "public/tech-unlocks.json");
+const geneDataFile = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "public/gene-data.json");
 const repoRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 
 const STATIC_TYPES: Record<string, string> = {
@@ -24,6 +26,8 @@ const STATIC_TYPES: Record<string, string> = {
   ".woff": "font/woff",
   ".otf": "font/otf",
   ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
 };
 
 function serveArt(middlewares: Connect.Server, prefix: string, root: string): void {
@@ -317,6 +321,119 @@ function readCoord(value: unknown): number {
   return Math.round(value);
 }
 
+function saveTechUnlocks(middlewares: Connect.Server): void {
+  middlewares.use("/api/tech-unlocks", (request, response, next) => {
+    if (request.method !== "POST") {
+      next();
+      return;
+    }
+    void writeTechUnlocks(request, response);
+  });
+}
+
+function writeTechUnlocks(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    request.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > 1_000_000) {
+        response.statusCode = 413;
+        response.end("too large");
+        request.destroy();
+        resolve();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("error", () => {
+      response.statusCode = 400;
+      response.end("bad request");
+      resolve();
+    });
+    request.on("end", () => {
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { v?: unknown; unlocked?: unknown };
+        if (body.v !== 1 || !Array.isArray(body.unlocked)) throw new Error("invalid tech unlocks");
+        const unlocked = body.unlocked.map((id) => readToken(id));
+        if (new Set(unlocked).size !== unlocked.length) throw new Error("invalid tech unlocks");
+        fs.mkdirSync(path.dirname(techUnlocksFile), { recursive: true });
+        fs.writeFileSync(techUnlocksFile, JSON.stringify({ v: 1, unlocked }));
+        response.statusCode = 204;
+        response.end();
+      } catch {
+        if (!response.writableEnded) {
+          response.statusCode = 400;
+          response.end("invalid tech unlocks");
+        }
+      }
+      resolve();
+    });
+  });
+}
+
+function saveGeneData(middlewares: Connect.Server): void {
+  middlewares.use("/api/gene-data", (request, response, next) => {
+    if (request.method !== "POST") {
+      next();
+      return;
+    }
+    void writeGeneData(request, response);
+  });
+}
+
+function writeGeneData(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    request.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > 2_000_000) {
+        response.statusCode = 413;
+        response.end("too large");
+        request.destroy();
+        resolve();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("error", () => {
+      response.statusCode = 400;
+      response.end("bad request");
+      resolve();
+    });
+    request.on("end", () => {
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { v?: unknown; genes?: unknown };
+        if (body.v !== 1 || typeof body.genes !== "object" || body.genes === null || Array.isArray(body.genes)) {
+          throw new Error("invalid gene data");
+        }
+        const genes: Record<string, Record<string, string>> = {};
+        for (const [tag, value] of Object.entries(body.genes)) {
+          if (!/^[A-Za-z0-9]{1,8}$/.test(tag)) throw new Error("invalid gene data");
+          if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("invalid gene data");
+          const record: Record<string, string> = {};
+          for (const [field, fieldValue] of Object.entries(value)) {
+            if (typeof fieldValue !== "string" || fieldValue.length > 2000 || field.length > 40) throw new Error("invalid gene data");
+            record[field] = fieldValue;
+          }
+          genes[tag] = record;
+        }
+        fs.mkdirSync(path.dirname(geneDataFile), { recursive: true });
+        fs.writeFileSync(geneDataFile, JSON.stringify({ v: 1, genes }, null, 2));
+        response.statusCode = 204;
+        response.end();
+      } catch {
+        if (!response.writableEnded) {
+          response.statusCode = 400;
+          response.end("invalid gene data");
+        }
+      }
+      resolve();
+    });
+  });
+}
+
 function saveTerrainEdits(middlewares: Connect.Server): void {
   middlewares.use("/api/terrain-edits", (request, response, next) => {
     if (request.method !== "POST") {
@@ -390,6 +507,8 @@ export default defineConfig({
         saveTerrainEdits(server.middlewares);
         saveGenomeState(server.middlewares);
         saveTechLayout(server.middlewares);
+        saveTechUnlocks(server.middlewares);
+        saveGeneData(server.middlewares);
       },
       configurePreviewServer(server: PreviewServer) {
         serveArt(server.middlewares, "/environment", artRoot);
@@ -403,6 +522,8 @@ export default defineConfig({
         saveTerrainEdits(server.middlewares);
         saveGenomeState(server.middlewares);
         saveTechLayout(server.middlewares);
+        saveTechUnlocks(server.middlewares);
+        saveGeneData(server.middlewares);
       },
     },
   ],

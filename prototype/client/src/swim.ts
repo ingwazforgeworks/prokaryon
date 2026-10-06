@@ -137,6 +137,39 @@ export function stepFlagellarSwitch(
 }
 
 /**
+ * Genome beat switching: every whip is a clockwise run, and the rest between
+ * whips belongs to the tumble. When a whip ends the motors flip
+ * counterclockwise and draw a tumble angle, so the cell reorients between
+ * runs instead of spending whole whips tumbling. The process per beat is
+ * swim, stop, tumble, swim.
+ */
+export function stepBeatSwitch(
+  state: FlagellarSwitchState,
+  enabled: boolean,
+  wasWhipping: boolean,
+  whipping: boolean,
+  randomSign: () => number = () => (Math.random() < 0.5 ? -1 : 1),
+  randomUnit: () => number = Math.random,
+): FlagellarSwitchState {
+  if (!enabled) return { ...state, clockwise: true, tumbleOmega: 0 };
+  if (whipping && !wasWhipping) {
+    return { clockwise: true, nextClockwise: false, tumbleSign: state.tumbleSign, tumbleOmega: 0 };
+  }
+  if (!whipping && wasWhipping) {
+    const sign = randomSign() < 0 ? -1 : 1;
+    const unit = Math.min(1, Math.max(0, randomUnit()));
+    const angle = TUMBLE_ANGLE_MIN + TUMBLE_ANGLE_SPAN * unit;
+    return {
+      clockwise: false,
+      nextClockwise: true,
+      tumbleSign: sign,
+      tumbleOmega: sign * angle * TUMBLE_DRAG,
+    };
+  }
+  return state;
+}
+
+/**
  * Sense of the whip is private. While the slider is between off and on, a
  * swimming daughter may be born already tumbling, and the following burst is
  * its own coin flip, so a lineage does not tumble together. With the pulse
@@ -248,6 +281,11 @@ export interface SwimBody {
   lateral: number;
   antilateral: number;
   undulation: number;
+  /**
+   * Per-site beat strength. When present it replaces the scalar for every site
+   * it names; a site it leaves out does not beat at all.
+   */
+  undulationBySite?: Partial<Record<FlagellumSite, number>>;
   ciliation: number;
   ciliaLength: number;
   ciliaSpeed: number;
@@ -324,8 +362,9 @@ export function stepSwim(
 }
 
 function flagellarForce(body: SwimBody): { x: number; y: number; torque: number } {
-  const undulation = Math.max(body.undulation, 0);
-  if (undulation <= 0) return { x: 0, y: 0, torque: 0 };
+  const fallback = Math.max(body.undulation, 0);
+  const bySite = body.undulationBySite;
+  if (fallback <= 0 && !bySite) return { x: 0, y: 0, torque: 0 };
   const reach = Math.max(flagellarBodyLength(body.length, body.width), 1e-4);
   const cos = Math.cos(body.angle);
   const sin = Math.sin(body.angle);
@@ -333,6 +372,8 @@ function flagellarForce(body: SwimBody): { x: number; y: number; torque: number 
   let y = 0;
   let torque = 0;
   const add = (amount: number, site: FlagellumSite): void => {
+    const undulation = bySite ? (bySite[site] ?? 0) : fallback;
+    if (undulation <= 0) return;
     for (const filament of filamentsForFlagellin(amount, reach)) {
       const anchor = flagellumSiteAnchor(body.length, body.width, body.bend, site, filament.mount);
       const rx = cos * anchor.x - sin * anchor.y;

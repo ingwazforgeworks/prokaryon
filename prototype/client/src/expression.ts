@@ -13,7 +13,7 @@ import {
 import { drawFluorescence } from "./expressionFluorescence";
 import { getGenome, promoterById, tagById } from "./genomeState";
 import { bodyFromSnapshot, traceBodyContours, type BodyShape, type ContourPoint } from "./shape";
-import { createUiSound, playUiSound, UI_SELECT } from "./uiSound";
+import { playCue } from "./uiSound";
 import type { CellSnapshot } from "./types";
 
 const METER_SCALE = 32;
@@ -59,7 +59,6 @@ export function initExpression(): void {
   const abundanceContext = abundanceCanvas.getContext("2d");
   if (!cellContext || !rateContext || !abundanceContext) throw new Error("missing expression canvas");
 
-  const clickSound = createUiSound(UI_SELECT);
   const rows = new Map<string, GeneRow>();
   let mode: ExpressionMode = "live";
   let paused = false;
@@ -190,7 +189,7 @@ export function initExpression(): void {
       button.append(image, name, meta);
       button.addEventListener("click", () => {
         rememberSelection(entry);
-        playUiSound(clickSound);
+        playCue("select");
         paint(performance.now());
       });
       item.append(button);
@@ -299,14 +298,14 @@ export function initExpression(): void {
   search.addEventListener("input", () => paint(performance.now()));
   isolateInput.addEventListener("change", () => {
     isolate = isolateInput.checked;
-    playUiSound(clickSound);
+    playCue("toggle");
     paint(performance.now());
   });
   previewButton.addEventListener("click", () => {
     mode = mode === "preview" ? "live" : "preview";
     previewButton.setAttribute("aria-pressed", String(mode === "preview"));
     inspectorKey = "";
-    playUiSound(clickSound);
+    playCue("toggle");
     paint(performance.now());
   });
   pauseButton.addEventListener("click", () => {
@@ -314,7 +313,7 @@ export function initExpression(): void {
     frozenTime = paused ? performance.now() / 1000 : null;
     pauseButton.setAttribute("aria-pressed", String(paused));
     pauseButton.textContent = paused ? "Resume" : "Pause";
-    playUiSound(clickSound);
+    playCue("toggle");
     paint(performance.now());
   });
   for (const button of rangeButtons) {
@@ -323,7 +322,7 @@ export function initExpression(): void {
       if (!Number.isFinite(seconds)) return;
       rangeSeconds = seconds;
       for (const other of rangeButtons) other.setAttribute("aria-selected", String(other === button));
-      playUiSound(clickSound);
+      playCue("tab");
       paint(performance.now());
     });
   }

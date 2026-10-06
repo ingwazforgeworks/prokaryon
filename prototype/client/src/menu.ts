@@ -1,7 +1,11 @@
 import { createLyricScroll } from "./lyrics";
+import { resetUnlocks } from "./geneUnlocks";
+import { initGeneMaker, openGeneMaker } from "./geneMaker";
+import { persistGenome, resetGenomeState } from "./genomeState";
 import { playMarquee } from "./player";
+import { setMutationPoints, STARTING_MUTATION_POINTS } from "./resources";
 import { gameSettings, onGameSettings, setGameSettings, uiScale } from "./settings";
-import { createUiSound, playUiSound, UI_HOVER, UI_SELECT } from "./uiSound";
+import { playCue } from "./uiSound";
 
 const THEME_TRACKS = ["Micronauts in the Void (Reprise).mp3", "Into the Microcosmos.mp3"];
 const PLAY_ICON = "/ui/music_player/play_16.png";
@@ -13,7 +17,6 @@ const BLACK_MS = 700;
 const LOGO_FADE_MS = 900;
 const LOGO_SETTLE_MS = 400;
 const PROMPT_HOLD_MS = 2000;
-const WORLD_FADE_MS = 1000;
 const WORDMARK_FADE_MS = 1000;
 const SWIM_DELAY_MS = 280;
 const SWIM_MS = 4600;
@@ -43,7 +46,7 @@ const MICROBE_ANCHORS = [
 /** Exclusive source x of each frame's right edge, before the next cell begins. */
 const MICROBE_CROP_RIGHT = [623, 1224, 616, 1224, 618, 1222, 617, 1226] as const;
 
-type Phase = "boot" | "splash" | "menu" | "note" | "lab";
+type Phase = "boot" | "splash" | "menu" | "note" | "maker" | "lab";
 
 let phase: Phase = "boot";
 
@@ -64,6 +67,8 @@ export function initTitleScreen(): void {
   const loadCell = document.querySelector<HTMLButtonElement>("#menu-load");
   const settings = document.querySelector<HTMLButtonElement>("#menu-settings");
   const credits = document.querySelector<HTMLButtonElement>("#menu-credits");
+  const geneMakerButton = document.querySelector<HTMLButtonElement>("#menu-gene-maker");
+  const maker = document.querySelector<HTMLElement>("#gene-maker");
   const back = document.querySelector<HTMLButtonElement>("#menu-back");
   const themeBack = document.querySelector<HTMLButtonElement>("#menu-theme-back");
   const themeNext = document.querySelector<HTMLButtonElement>("#menu-theme-next");
@@ -78,8 +83,9 @@ export function initTitleScreen(): void {
   const lyricHost = document.querySelector<HTMLElement>("#menu-lyrics");
   const wordmark = document.querySelector<HTMLImageElement>("#menu-wordmark");
   const microbe = document.querySelector<HTMLElement>("#menu-microbe");
+  const discord = document.querySelector<HTMLButtonElement>("#menu-discord");
   const ui = document.getElementById("ui");
-  if (!root || !splash || !menu || !actions || !note || !noteTitle || !noteBody || !newCell || !loadCell || !settings || !credits || !back || !wordmark || !microbe) {
+  if (!root || !splash || !menu || !actions || !note || !noteTitle || !noteBody || !newCell || !loadCell || !settings || !credits || !geneMakerButton || !maker || !back || !wordmark || !microbe || !discord) {
     throw new Error("missing title screen");
   }
   if (!themeBack || !themeNext || !themeTitle || !themeMarquee || !themeToggle || !themeIcon || !themeVolume || !themeVolumeIcon || !themeLevel || !themeVolumeWrap || !lyricHost) {
@@ -90,8 +96,6 @@ export function initTitleScreen(): void {
   document.documentElement.dataset.title = "1";
   ui?.setAttribute("inert", "");
 
-  const hoverSound = createUiSound(UI_HOVER);
-  const clickSound = createUiSound(UI_SELECT);
   const theme = new Audio();
   theme.preload = "auto";
   const initialVolume = gameSettings().music;
@@ -240,6 +244,9 @@ export function initTitleScreen(): void {
   const placeMicrobe = (now: number): void => {
     placeLyrics();
     const pose = introPose(now);
+    if (!reduceMotion && swimOrigin > 0 && now >= swimOrigin + SWIM_DELAY_MS + SWIM_MS) {
+      root.classList.add("is-world");
+    }
     const actionsTransform = `translate3d(${pose.x}px, ${pose.y}px, 0)`;
     const noteTransform = `translate3d(${pose.x}px, ${pose.y - pose.nudge}px, 0)`;
     if (actions.style.transform !== actionsTransform) actions.style.transform = actionsTransform;
@@ -336,6 +343,7 @@ export function initTitleScreen(): void {
   const showActions = (): void => {
     phase = "menu";
     note.hidden = true;
+    maker.hidden = true;
     actions.hidden = false;
     microbe.classList.remove("is-away");
     if (buttonsReady) {
@@ -353,8 +361,18 @@ export function initTitleScreen(): void {
     noteBody.textContent = body;
     actions.hidden = true;
     note.hidden = false;
+    maker.hidden = true;
     microbe.classList.add("is-away");
     back.focus();
+  };
+
+  const showMaker = (): void => {
+    phase = "maker";
+    actions.hidden = true;
+    note.hidden = true;
+    maker.hidden = false;
+    microbe.classList.add("is-away");
+    openGeneMaker();
   };
 
   const showMenu = (): void => {
@@ -363,26 +381,33 @@ export function initTitleScreen(): void {
     phase = "menu";
     splash.inert = true;
     menu.inert = false;
-    root.classList.remove("is-splash");
+    root.classList.remove("is-splash", "is-logo", "is-prompt");
     root.classList.add("is-menu");
     showActions();
     beginIntro();
     if (reduceMotion) return;
-    later(WORLD_FADE_MS, () => {
-      if (phase === "menu" || phase === "note") root.classList.add("is-brand");
-    });
-    later(WORLD_FADE_MS + WORDMARK_FADE_MS, () => {
-      if (phase !== "lab") {
-        swimOrigin = performance.now();
-        microbeLast = 0;
-        microbeFrame = 0;
-        microbeFrameBank = 0;
-      }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (phase !== "menu" && phase !== "note") return;
+        root.classList.add("is-brand");
+        later(WORDMARK_FADE_MS, () => {
+          if (phase === "lab") return;
+          swimOrigin = performance.now();
+          microbeLast = 0;
+          microbeFrame = 0;
+          microbeFrameBank = 0;
+        });
+      });
     });
   };
 
   const enterLab = (): void => {
     if (phase === "lab") return;
+    // New Cell always begins from a clean organism, whatever was saved last session.
+    resetGenomeState();
+    void persistGenome();
+    resetUnlocks();
+    setMutationPoints(STARTING_MUTATION_POINTS);
     phase = "lab";
     window.cancelAnimationFrame(microbeRaf);
     theme.pause();
@@ -399,19 +424,19 @@ export function initTitleScreen(): void {
     window.setTimeout(close, reduceMotion ? 0 : 360);
   };
 
-  for (const button of [newCell, loadCell, settings, credits, back, themeBack, themeNext, themeToggle, themeVolume]) {
-    button.addEventListener("pointerenter", () => playUiSound(hoverSound));
+  for (const button of [newCell, loadCell, settings, credits, geneMakerButton, back, discord, themeBack, themeNext, themeToggle, themeVolume]) {
+    button.addEventListener("pointerenter", () => playCue("hover"));
   }
   themeBack.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("step");
     loadTheme(themeIndex - 1, !theme.paused && theme.src !== "");
   });
   themeNext.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("step");
     loadTheme(themeIndex + 1, !theme.paused && theme.src !== "");
   });
   themeToggle.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("device");
     if (theme.paused) startTheme();
     else {
       theme.pause();
@@ -419,7 +444,7 @@ export function initTitleScreen(): void {
     }
   });
   themeVolume.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("toggle");
     setThemeVolume(theme.volume === 0 ? remembered : 0);
   });
   themeLevel.addEventListener("input", () => {
@@ -445,27 +470,32 @@ export function initTitleScreen(): void {
 
   splash.addEventListener("click", () => {
     if (phase !== "splash") return;
-    playUiSound(clickSound);
+    playCue("select");
     showMenu();
   });
   newCell.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("chime");
     enterLab();
   });
   loadCell.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("reject");
     showNote("Load Cell", "No saved cells yet.");
   });
   settings.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("reject");
     showNote("Settings", "Open a cell to change settings.");
   });
   credits.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("select");
     showNote("Credits", "Gnome Boys Research Solutions");
   });
+  geneMakerButton.addEventListener("click", () => {
+    playCue("select");
+    showMaker();
+  });
+  initGeneMaker({ onBack: () => showActions() });
   back.addEventListener("click", () => {
-    playUiSound(clickSound);
+    playCue("back");
     showActions();
   });
 
@@ -476,19 +506,36 @@ export function initTitleScreen(): void {
   window.addEventListener("keydown", (event) => {
     if (phase === "splash" && (event.key === "Enter" || event.key === " " || event.key === "Escape")) {
       event.preventDefault();
+      playCue("select");
       showMenu();
+      return;
+    }
+    if (phase === "menu" && (event.key === "i" || event.key === "I") && !event.repeat) {
+      const target = event.target;
+      if (target instanceof Element && target.closest("input, textarea, select")) return;
+      if (geneMakerButton.hidden) {
+        geneMakerButton.hidden = false;
+        playCue("toggle");
+      }
       return;
     }
     if (phase === "menu" && event.key === " " && !event.repeat) {
       const target = event.target;
       if (target instanceof Element && menu.contains(target) && target.closest("button, input, textarea, select")) return;
       event.preventDefault();
-      playUiSound(clickSound);
+      playCue("chime");
       enterLab();
       return;
     }
     if (phase === "note" && event.key === "Escape" && !event.repeat) {
       event.preventDefault();
+      playCue("back");
+      showActions();
+      return;
+    }
+    if (phase === "maker" && event.key === "Escape" && !event.repeat) {
+      event.preventDefault();
+      playCue("back");
       showActions();
     }
   });

@@ -126,7 +126,7 @@ export function setCellGenomeSource(source: ((cellId: number) => readonly Genome
 }
 
 export function proteinSpriteUrl(geneId: string): string {
-  return `/ui/genome_viewer/proteins/named/individuals_32x32/${encodeURIComponent(geneId)}.png`;
+  return `/ui/genome_viewer/proteins/individuals_32x32/${encodeURIComponent(geneId)}.png`;
 }
 
 export function expressionEntryId(cellId: number, geneId: string, copyIndex: number): string {
@@ -173,7 +173,7 @@ export function compartmentFromArtType(type: string): Compartment | null {
 export async function loadArtCompartments(): Promise<Map<string, Compartment>> {
   const map = new Map<string, Compartment>();
   try {
-    const response = await fetch("/ui/genome_viewer/proteins/named/gene_index.json");
+    const response = await fetch("/ui/genome_viewer/proteins/gene_index.json");
     if (!response.ok) return map;
     const body = (await response.json()) as { sheets?: Array<{ genes?: Array<{ code?: string; type?: string }> }> };
     for (const sheet of body.sheets ?? []) {

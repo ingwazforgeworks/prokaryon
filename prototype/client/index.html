@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prokaryon cell lab</title>
+    <link rel="icon" type="image/png" href="/branding/prokaryon_favicon.png" />
     <link rel="preload" href="/fonts/DepartureMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <style>
       @font-face {
@@ -188,9 +189,76 @@
         margin-top: 4px;
         color: #9aabaa;
       }
+      #env-probe-leader {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        pointer-events: none;
+        display: none;
+      }
+      #env-probe-leader.on {
+        display: block;
+      }
+      #env-probe-leader svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #env-probe-leader polyline {
+        fill: none;
+        stroke: #b7d6d4;
+        stroke-width: 1;
+        stroke-linejoin: miter;
+        stroke-linecap: butt;
+      }
+      #env-probe {
+        position: fixed;
+        z-index: 4;
+        display: none;
+        pointer-events: none;
+        min-width: 176px;
+        padding: 8px 10px 9px;
+        background: rgba(8, 12, 14, 0.92);
+        border: 1px solid rgba(150, 196, 194, 0.55);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+        color: #d7e4e4;
+        font-family: "Departure Mono", ui-monospace, monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        -webkit-font-smoothing: none;
+      }
+      #env-probe.on {
+        display: block;
+      }
+      #env-probe .env-probe-title {
+        margin-bottom: 4px;
+        color: #f2eadc;
+      }
+      #env-probe .env-probe-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      #env-probe .env-probe-value {
+        color: #f2eadc;
+      }
+      #env-probe .env-probe-nutrients {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(150, 196, 194, 0.35);
+      }
+      #env-probe .env-probe-label {
+        margin-bottom: 2px;
+        color: #9aabaa;
+      }
+      #env-probe .env-probe-row.is-empty .env-probe-name,
+      #env-probe .env-probe-row.is-empty .env-probe-value {
+        color: #5c6e6d;
+      }
       #hud {
         position: fixed;
         top: calc(var(--top-pane) + 16px);
+        bottom: 56px;
         left: 16px;
         z-index: 2;
         display: flex;
@@ -198,20 +266,45 @@
         align-items: flex-start;
         gap: 8px;
       }
+      #ui > #hud {
+        pointer-events: none;
+      }
       #position,
       #debug {
         background: rgba(16, 16, 16, 0.94);
         color: #e6e6e6;
         font: 14px/1.4 ui-monospace, Consolas, monospace;
         border: 1px solid #555;
+        pointer-events: auto;
       }
       #position {
+        flex: none;
         margin: 0;
         padding: 8px 12px;
       }
       #debug {
+        box-sizing: border-box;
         min-width: 260px;
+        min-height: 0;
+        flex: 0 1 auto;
         padding: 12px 14px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #9a9a9a #1a1a1a;
+      }
+      #debug::-webkit-scrollbar {
+        width: 10px;
+      }
+      #debug::-webkit-scrollbar-track {
+        background: #1a1a1a;
+      }
+      #debug::-webkit-scrollbar-thumb {
+        background: #8a8a8a;
+        border: 2px solid #1a1a1a;
+      }
+      #debug::-webkit-scrollbar-thumb:hover {
+        background: #c8c8c8;
       }
       #debug[hidden],
       #debug [hidden] {
@@ -286,7 +379,8 @@
         opacity: 0.45;
         cursor: default;
       }
-      #light-value {
+      #light-value,
+      #time-value {
         min-width: 5ch;
         text-align: center;
       }
@@ -1009,6 +1103,7 @@
         cursor: pointer;
       }
       #genome-viewer,
+      #gene-editor,
       #codex,
       #tech-tree,
       #expression,
@@ -1033,11 +1128,27 @@
         -webkit-font-smoothing: none;
       }
       #genome-viewer[hidden],
+      #gene-editor[hidden],
       #codex[hidden],
       #tech-tree[hidden],
       #expression[hidden],
       #settings[hidden] {
         display: none;
+      }
+      .settings-title-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+      }
+      #settings-apply:disabled {
+        opacity: 0.4;
+        cursor: default;
+        color: #8aa4a2;
+      }
+      #settings-apply:disabled:hover {
+        border-color: rgba(140, 176, 176, 0.38);
+        color: #8aa4a2;
       }
       .genome-titlebar {
         display: flex;
@@ -1048,17 +1159,6 @@
         padding: 3px 6px 3px 8px;
         background: linear-gradient(180deg, rgba(34, 44, 46, 0.96), rgba(12, 18, 20, 0.96));
         border-bottom: 1px solid rgba(150, 196, 194, 0.45);
-      }
-      #genome-viewer .genome-titlebar {
-        position: relative;
-      }
-      .genome-mode {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        display: flex;
-        gap: 4px;
       }
       .genome-mode-tab {
         margin: 0;
@@ -1213,6 +1313,7 @@
       .editor-code,
       .editor-select,
       .editor-clear,
+      .editor-auto,
       .editor-save,
       .editor-add,
       .editor-step,
@@ -1252,6 +1353,7 @@
       .editor-code:focus,
       .editor-select:focus,
       .editor-clear:focus-visible,
+      .editor-auto:focus-visible,
       .editor-save:focus-visible,
       .editor-add:focus-visible,
       .editor-step:focus-visible,
@@ -1262,6 +1364,7 @@
         outline-offset: 1px;
       }
       .editor-clear,
+      .editor-auto,
       .editor-save,
       .editor-add,
       .editor-step,
@@ -1273,6 +1376,7 @@
         cursor: pointer;
       }
       .editor-clear:hover,
+      .editor-auto:hover,
       .editor-save:hover:not(:disabled),
       .editor-step:hover:not(:disabled),
       .editor-tab:hover {
@@ -1280,34 +1384,58 @@
         color: #f7fffe;
       }
       .editor-stage {
+        position: relative;
         flex: 1;
         min-height: 0;
-        overflow: auto;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 10px 14px;
+        background-color: #070b0d;
+        background-image: radial-gradient(rgba(138, 164, 162, 0.2) 1px, transparent 1px);
+        background-size: 8px 8px;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+      }
+      .editor-stage.is-panning,
+      .editor-stage.is-panning * {
+        cursor: grabbing;
+      }
+      .editor-stage-world {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 14px;
-        padding: 12px 10px 14px;
-        background-color: #070b0d;
-        background-image: radial-gradient(rgba(138, 164, 162, 0.2) 1px, transparent 1px);
-        background-size: 8px 8px;
+        flex: none;
+        width: max-content;
+        will-change: transform;
+      }
+      .editor-stage-reset {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        z-index: 2;
       }
       .editor-track {
         display: grid;
-        grid-template-columns: 132px 12px 152px 12px 132px 12px 132px;
+        /* Same nine columns in every promoter mode; items auto-place in DOM order. */
+        grid-template-columns: 132px 12px 132px 12px 152px 12px 132px 12px 132px;
         grid-template-rows: auto;
         justify-content: center;
         align-items: center;
         flex: none;
       }
-      .editor-promoter { grid-column: 1; grid-row: 1; }
-      .editor-joint-a { grid-column: 2; grid-row: 1; }
-      .editor-coding { grid-column: 3; grid-row: 1; }
-      .editor-joint-b { grid-column: 4; grid-row: 1; }
-      .editor-route { grid-column: 5; grid-row: 1; }
-      .editor-joint-c { grid-column: 6; grid-row: 1; }
-      .editor-site { grid-column: 7; grid-row: 1; }
+      .editor-amount-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 24px;
+        min-width: 0;
+      }
       .editor-joint {
         width: 7px;
         height: 7px;
@@ -1336,6 +1464,9 @@
         cursor: pointer;
       }
       .editor-promoter { border-color: #c4923e; }
+      .editor-amount,
+      .editor-amount-min,
+      .editor-amount-max { border-color: #5fa89a; }
       .editor-coding { border-color: #6e8eb8; }
       .editor-route,
       .editor-site { border-color: rgba(180, 164, 120, 0.7); }
@@ -1382,6 +1513,9 @@
       }
       .editor-slot-kind { color: #d7c7a4; }
       .editor-coding .editor-slot-kind { color: #b7c7dc; }
+      .editor-amount .editor-slot-kind,
+      .editor-amount-min .editor-slot-kind,
+      .editor-amount-max .editor-slot-kind { color: #a9d6cb; }
       .editor-slot-name,
       .editor-card-name,
       .editor-gene-name {
@@ -1521,6 +1655,10 @@
       .editor-card[aria-pressed="true"],
       .editor-card:hover {
         border-color: #e2a04a;
+      }
+      .editor-card.is-dimmed {
+        opacity: 0.35;
+        cursor: not-allowed;
       }
       .editor-cards-empty {
         grid-row: 1 / span 2;
@@ -2118,6 +2256,65 @@
         scrollbar-width: thin;
         scrollbar-color: rgba(150, 196, 194, 0.45) transparent;
       }
+      .genome-detail-bar {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        justify-content: flex-end;
+        margin: 0 0 10px;
+        padding: 4px 0 6px;
+        background: rgba(8, 12, 14, 0.92);
+        border-bottom: 1px solid rgba(150, 196, 194, 0.28);
+      }
+      .genome-confirm {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(4, 8, 10, 0.66);
+      }
+      .genome-confirm[hidden] {
+        display: none;
+      }
+      .genome-confirm-card {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        width: min(380px, calc(100% - 48px));
+        padding: 16px 18px;
+        background: rgba(8, 12, 14, 0.97);
+        border: 1px solid rgba(150, 196, 194, 0.72);
+        border-radius: 6px;
+        box-shadow:
+          inset 0 1px 0 rgba(214, 236, 234, 0.14),
+          0 16px 40px rgba(0, 0, 0, 0.45);
+        color: #d7e4e4;
+      }
+      .genome-confirm-title {
+        margin: 0;
+        color: #f7fffe;
+        font-size: 13px;
+        letter-spacing: 2px;
+        line-height: 13px;
+        text-transform: uppercase;
+      }
+      .genome-confirm-copy {
+        margin: 0;
+        color: #d7e4e4;
+        font-size: 12px;
+        line-height: 16px;
+      }
+      .genome-confirm-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .genome-confirm-delete {
+        border-color: rgba(226, 160, 74, 0.6);
+      }
       .genome-detail.is-empty {
         display: flex;
         align-items: center;
@@ -2174,6 +2371,50 @@
         image-rendering: pixelated;
         image-rendering: crisp-edges;
       }
+      .genome-detail-recipe {
+        clear: both;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 12px 0 0;
+      }
+      .genome-detail-tile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        width: 84px;
+        margin: 0;
+        padding: 6px 4px;
+        box-sizing: border-box;
+        background: linear-gradient(180deg, rgba(24, 32, 34, 0.96), rgba(8, 12, 14, 0.96));
+        border: 1px solid rgba(140, 176, 176, 0.38);
+        border-radius: 3px;
+        box-shadow: inset 0 1px 0 rgba(214, 236, 234, 0.12);
+      }
+      .genome-detail-tile img {
+        display: block;
+        width: 32px;
+        height: 32px;
+        object-fit: contain;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+      .genome-detail-tile-kind {
+        color: #8aa4a2;
+        font-size: 9px;
+        line-height: 9px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      .genome-detail-tile-name {
+        max-width: 100%;
+        overflow-wrap: break-word;
+        text-align: center;
+        font-size: 11px;
+        line-height: 12px;
+        color: #f7fffe;
+      }
       #codex .genome-detail {
         flex: 1 1 auto;
         min-width: 0;
@@ -2209,6 +2450,23 @@
         gap: 6px;
         padding: 6px 8px;
         border-bottom: 1px solid rgba(150, 196, 194, 0.35);
+      }
+      .tech-categories {
+        padding: 3px 8px;
+        align-items: center;
+      }
+      .tech-category-group {
+        display: flex;
+        gap: 6px;
+      }
+      .tech-category-group[hidden] {
+        display: none;
+      }
+      .tech-node[hidden] {
+        display: none;
+      }
+      .tech-group[hidden] {
+        display: none;
       }
       .tech-mode {
         margin: 0;
@@ -2264,7 +2522,7 @@
         cursor: grab;
       }
       .tech-viewport.is-arranging .tech-group {
-        border-style: dashed;
+        outline: 1px dashed rgba(150, 196, 194, 0.55);
       }
       .tech-viewport.is-arranging .tech-node {
         cursor: grab;
@@ -2277,10 +2535,6 @@
       }
       .tech-group {
         position: absolute;
-        box-sizing: border-box;
-        border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
-        background: color-mix(in srgb, var(--accent) 7%, transparent);
-        border-radius: 4px;
         pointer-events: none;
       }
       .tech-group-label,
@@ -2294,9 +2548,7 @@
         pointer-events: none;
       }
       .tech-group-label {
-        position: absolute;
-        top: 8px;
-        left: 10px;
+        display: none;
       }
       .tech-category {
         position: absolute;
@@ -2379,10 +2631,6 @@
         outline: 1px dashed #e7fffc;
         outline-offset: 2px;
       }
-      .tech-group.is-selected {
-        border-color: #e7fffc;
-        border-style: solid;
-      }
       .tech-node.is-label {
         justify-content: center;
         padding: 0 8px;
@@ -2391,6 +2639,39 @@
         letter-spacing: 0.5px;
         text-transform: none;
         white-space: nowrap;
+      }
+      .tech-node.is-unlocked {
+        border-color: rgba(111, 191, 122, 0.85);
+        box-shadow:
+          inset 3px 0 0 #6fbf7a,
+          inset 0 1px 0 rgba(214, 236, 234, 0.16),
+          0 1px 1px rgba(0, 0, 0, 0.55);
+      }
+      .tech-unlock {
+        margin: 12px 0 0;
+        width: 100%;
+        padding: 8px 10px;
+        box-sizing: border-box;
+        background: linear-gradient(180deg, rgba(62, 102, 104, 0.9), rgba(20, 44, 46, 0.95));
+        border: 1px solid rgba(198, 236, 232, 0.55);
+        border-radius: 3px;
+        color: #e7fffc;
+        font: inherit;
+        font-size: 11px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .tech-unlock:hover:not(:disabled) {
+        border-color: #e7fffc;
+      }
+      .tech-unlock:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .tech-unlock-state {
+        margin: 12px 0 0;
+        color: #6fbf7a;
       }
       .tech-zoom {
         position: absolute;
@@ -2834,7 +3115,9 @@
       }
       html[data-title] #ui,
       html[data-title] #inspector,
-      html[data-title] #inspect-corners {
+      html[data-title] #inspect-corners,
+      html[data-title] #env-probe,
+      html[data-title] #env-probe-leader {
         visibility: hidden;
       }
       #title {
@@ -2871,8 +3154,10 @@
         cursor: pointer;
       }
       #title.is-menu .splash {
-        opacity: 0;
         pointer-events: none;
+      }
+      #title.is-world .splash {
+        opacity: 0;
         transition: opacity 1000ms ease;
       }
       .splash img {
@@ -2885,6 +3170,11 @@
       #title.is-logo .splash img {
         opacity: 1;
         transition: opacity 900ms ease;
+      }
+      #title.is-menu .splash img,
+      #title.is-menu .splash-skip {
+        opacity: 0;
+        transition: none;
       }
       .splash-skip {
         position: absolute;
@@ -2947,7 +3237,7 @@
         opacity: 1;
       }
       #title.is-actions #menu-actions::before {
-        inset: -64px -48px calc(29% - 254px);
+        inset: -64px -48px calc(29% - 304px);
       }
       .menu-title {
         margin: 0 0 4px;
@@ -3021,6 +3311,7 @@
       #menu-load { top: calc(71% + 100px); }
       #menu-settings { top: calc(71% + 150px); }
       #menu-credits { top: calc(71% + 200px); }
+      #menu-gene-maker { top: calc(71% + 250px); }
       #title.is-actions #menu-actions .menu-button {
         opacity: 1;
         transition: opacity 700ms ease;
@@ -3028,6 +3319,230 @@
       #menu-note .menu-title {
         font-size: 13px;
         letter-spacing: 2px;
+      }
+      #gene-maker {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        width: min(1240px, calc(100vw / var(--ui-scale) - 64px));
+        max-height: min(880px, calc(100vh / var(--ui-scale) - 64px));
+        background: rgba(8, 12, 14, 0.95);
+        border: 1px solid rgba(150, 196, 194, 0.72);
+        border-radius: 6px;
+        box-shadow:
+          inset 0 1px 0 rgba(214, 236, 234, 0.14),
+          0 16px 40px rgba(0, 0, 0, 0.45);
+        color: #d7e4e4;
+        font-family: "Departure Mono", ui-monospace, monospace;
+        -webkit-font-smoothing: none;
+      }
+      #gene-maker[hidden] {
+        display: none;
+      }
+      .gene-maker-content {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+        padding: 14px 18px 16px;
+      }
+      .gene-maker-nav {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .gene-maker-nav .genome-scroll-step {
+        width: auto;
+        height: 28px;
+        padding: 0 14px;
+        font-size: 12px;
+        line-height: 12px;
+      }
+      .gene-maker-nav select {
+        flex: 1;
+        min-width: 0;
+      }
+      .gene-maker-count {
+        flex: none;
+        color: #9fc6c4;
+        font-size: 11px;
+        letter-spacing: 2px;
+        line-height: 11px;
+        text-transform: uppercase;
+      }
+      .gene-maker-body {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px 18px;
+        padding: 14px 4px 14px 2px;
+        max-height: min(700px, calc(100vh / var(--ui-scale) - 280px));
+        overflow-y: auto;
+        border-top: 1px solid rgba(150, 196, 194, 0.45);
+        border-bottom: 1px solid rgba(150, 196, 194, 0.45);
+        scrollbar-width: thin;
+        scrollbar-color: #6f9c9a transparent;
+      }
+      .gene-maker-body::-webkit-scrollbar,
+      #gene-maker textarea::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      .gene-maker-body::-webkit-scrollbar-track,
+      #gene-maker textarea::-webkit-scrollbar-track {
+        background: transparent;
+        border-left: 1px solid rgba(150, 196, 194, 0.22);
+      }
+      .gene-maker-body::-webkit-scrollbar-thumb,
+      #gene-maker textarea::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(86, 132, 130, 0.95), rgba(28, 52, 54, 0.95));
+        border: 1px solid rgba(180, 214, 212, 0.45);
+        box-shadow: inset 0 1px 0 rgba(214, 236, 234, 0.2);
+      }
+      .gene-maker-body::-webkit-scrollbar-thumb:hover,
+      #gene-maker textarea::-webkit-scrollbar-thumb:hover {
+        border-color: #e2a04a;
+        background: linear-gradient(180deg, rgba(110, 160, 156, 0.98), rgba(36, 64, 66, 0.98));
+      }
+      .gene-maker-field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 0;
+      }
+      .gene-maker-field.wide {
+        grid-column: 1 / -1;
+      }
+      .gene-maker-field-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .gene-maker-field-head > label {
+        color: #9fc6c4;
+        font-size: 11px;
+        letter-spacing: 1px;
+        line-height: 11px;
+        text-transform: uppercase;
+        cursor: default;
+      }
+      .gene-maker-info {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(180deg, rgba(34, 44, 46, 0.92), rgba(8, 12, 14, 0.92));
+        border: 1px solid rgba(140, 176, 176, 0.55);
+        border-radius: 50%;
+        box-shadow: inset 0 1px 0 rgba(214, 236, 234, 0.16);
+        color: #9fc6c4;
+        font: inherit;
+        font-style: italic;
+        font-size: 10px;
+        line-height: 10px;
+        cursor: help;
+      }
+      .gene-maker-info:hover,
+      .gene-maker-info:focus-visible {
+        border-color: rgba(198, 236, 232, 0.85);
+        color: #f7fffe;
+      }
+      .gene-maker-info:focus-visible {
+        outline: 1px solid #fff;
+        outline-offset: 2px;
+      }
+      .gene-maker-tip {
+        position: fixed;
+        z-index: 90;
+        max-width: 340px;
+        padding: 8px 10px;
+        background: rgba(8, 12, 14, 0.97);
+        border: 1px solid rgba(150, 196, 194, 0.6);
+        border-radius: 3px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        color: #d7e4e4;
+        font: inherit;
+        font-size: 11px;
+        line-height: 14px;
+        pointer-events: none;
+      }
+      .gene-maker-tip[hidden] {
+        display: none;
+      }
+      #gene-maker input[type="text"],
+      #gene-maker select,
+      #gene-maker textarea {
+        box-sizing: border-box;
+        width: 100%;
+        margin: 0;
+        padding: 7px 9px;
+        background: linear-gradient(180deg, rgba(34, 44, 46, 0.92), rgba(8, 12, 14, 0.92));
+        border: 1px solid rgba(140, 176, 176, 0.38);
+        border-radius: 3px;
+        box-shadow: inset 0 1px 0 rgba(214, 236, 234, 0.16);
+        color: #f7fffe;
+        font: inherit;
+        font-size: 13px;
+        line-height: 15px;
+      }
+      #gene-maker select {
+        color-scheme: dark;
+      }
+      #gene-maker input::placeholder,
+      #gene-maker textarea::placeholder {
+        color: #8aa4a2;
+      }
+      #gene-maker input[type="text"]:focus-visible,
+      #gene-maker select:focus-visible,
+      #gene-maker textarea:focus-visible {
+        outline: 1px solid #fff;
+        outline-offset: 1px;
+      }
+      #gene-maker textarea {
+        resize: vertical;
+        min-height: 58px;
+        scrollbar-width: thin;
+        scrollbar-color: #6f9c9a transparent;
+      }
+      .gene-maker-checks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        padding: 6px 0;
+      }
+      .gene-maker-check {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #d7e4e4;
+        font-size: 12px;
+        line-height: 12px;
+        cursor: pointer;
+      }
+      .gene-maker-check input {
+        accent-color: #d5ecea;
+        margin: 0;
+      }
+      .gene-maker-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .gene-maker-foot .menu-button {
+        height: 34px;
+        font-size: 12px;
+      }
+      .gene-maker-status {
+        flex: 1;
+        min-width: 0;
+        color: #d7e4e4;
+        font-size: 11px;
+        letter-spacing: 1px;
+        line-height: 13px;
+        text-transform: uppercase;
       }
       .menu-button {
         height: 40px;
@@ -3069,6 +3584,46 @@
       }
       #title.is-music .menu-player {
         opacity: 1;
+        transition: opacity 420ms ease;
+      }
+      .menu-discord {
+        position: absolute;
+        left: 20px;
+        bottom: 20px;
+        z-index: 4;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 32px;
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(180deg, rgba(34, 44, 46, 0.92), rgba(8, 12, 14, 0.92));
+        border: 1px solid rgba(140, 176, 176, 0.38);
+        border-radius: 6px;
+        box-shadow:
+          inset 0 1px 0 rgba(214, 236, 234, 0.16),
+          0 1px 1px rgba(0, 0, 0, 0.55);
+        cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .menu-discord img {
+        display: block;
+        width: 22px;
+        height: auto;
+        pointer-events: none;
+      }
+      .menu-discord:hover {
+        border-color: rgba(198, 236, 232, 0.85);
+      }
+      .menu-discord:focus-visible {
+        outline: 1px solid #fff;
+        outline-offset: 2px;
+      }
+      #title.is-music .menu-discord {
+        opacity: 1;
+        pointer-events: auto;
         transition: opacity 420ms ease;
       }
       .menu-lyrics {
@@ -3163,6 +3718,7 @@
         #title.is-brand #menu-actions::before,
         #title.is-actions #menu-actions .menu-button,
         #title.is-music .menu-player,
+        #title.is-music .menu-discord,
         .menu-lyric {
           transition: none;
         }
@@ -3172,7 +3728,8 @@
         #title.is-brand .menu-wordmark,
         #title.is-brand #menu-actions::before,
         #title.is-actions #menu-actions .menu-button,
-        #title.is-music .menu-player {
+        #title.is-music .menu-player,
+        #title.is-music .menu-discord {
           opacity: 1;
         }
         #title.is-menu .splash,
@@ -3301,7 +3858,7 @@
     </script>
     <div id="title" hidden>
       <button type="button" id="splash" class="splash" aria-label="Gnome Boys Research Solutions. Click to continue.">
-        <img src="/ui/gbrs_logo.png" alt="" width="1024" height="565" />
+        <img src="/branding/gbrs_logo.png" alt="" width="1024" height="565" />
         <span class="splash-skip">Click to continue</span>
       </button>
       <div id="main-menu" class="main-menu" inert>
@@ -3311,14 +3868,37 @@
           <button type="button" class="menu-button" id="menu-load">Load Cell</button>
           <button type="button" class="menu-button" id="menu-settings">Settings</button>
           <button type="button" class="menu-button" id="menu-credits">Credits</button>
+          <button type="button" class="menu-button" id="menu-gene-maker" hidden>Gene Maker</button>
         </div>
         <div class="menu-stack" id="menu-note" hidden>
           <h2 class="menu-title" id="menu-note-title"></h2>
           <p class="menu-note" id="menu-note-body"></p>
           <button type="button" class="menu-button" id="menu-back">Back</button>
         </div>
+        <div id="gene-maker" hidden>
+          <div class="genome-titlebar">
+            <h2 class="genome-title">Gene Maker</h2>
+            <button type="button" class="genome-close" id="gene-maker-close" aria-label="Close">X</button>
+          </div>
+          <div class="gene-maker-content">
+            <div class="gene-maker-nav">
+              <button type="button" class="genome-scroll-step" id="gene-prev">Prev</button>
+              <select id="gene-select" aria-label="Gene"></select>
+              <button type="button" class="genome-scroll-step" id="gene-next">Next</button>
+              <span class="gene-maker-count" id="gene-maker-count"></span>
+            </div>
+            <div class="gene-maker-body" id="gene-maker-body"></div>
+            <div class="gene-maker-foot">
+              <span class="gene-maker-status" id="gene-maker-status"></span>
+              <button type="button" class="menu-button" id="gene-save">Save</button>
+            </div>
+          </div>
+        </div>
         <div class="menu-lyrics" id="menu-lyrics" hidden></div>
         <div id="menu-microbe" class="menu-microbe" aria-hidden="true"></div>
+        <button type="button" class="menu-discord" id="menu-discord" aria-label="Discord">
+          <img src="/branding/Discord-Symbol-Blurple.png" alt="" width="22" height="17" />
+        </button>
         <div class="menu-player">
           <div class="player">
             <button type="button" class="player-control" id="menu-theme-back" aria-label="Previous track">
@@ -3356,29 +3936,27 @@
       </div>
       <div id="debug-genetics" hidden>
       <div class="debug-row">
-        <button id="populate-genes" class="debug-wide" type="button" aria-pressed="false">Populate genes</button>
+        <span>Mutation Points</span>
+        <button id="mutation-points-dec" type="button" aria-label="Decrease mutation points">−</button>
+        <span id="mutation-points-value">0</span>
+        <button id="mutation-points-inc" type="button" aria-label="Increase mutation points">+</button>
       </div>
       <div class="debug-row">
-        <button id="tech-arrange" class="debug-wide" type="button" aria-pressed="false">Arrange tree</button>
-        <button id="tech-layout-save" class="debug-wide" type="button">Save tree</button>
+        <button id="delete-all-genes" class="debug-wide" type="button">Delete All Genes</button>
       </div>
       <div class="debug-row">
-        <input id="tech-edit-name" type="text" placeholder="Name" aria-label="Category or node name" autocomplete="off" spellcheck="false" />
+        <button id="save-cell-state" class="debug-wide" type="button">Save Cell State</button>
+        <button id="load-cell-state" class="debug-wide" type="button">Load Cell State</button>
       </div>
-      <div class="debug-row">
-        <button id="tech-rename" class="debug-wide" type="button">Rename</button>
-        <button id="tech-delete" class="debug-wide" type="button">Delete</button>
-        <button id="tech-new-category" class="debug-wide" type="button">New category</button>
-        <button id="tech-new-node" class="debug-wide" type="button">New node</button>
-      </div>
-      <div class="debug-row">
-        <button id="tech-draw-unlock" class="debug-wide" type="button" aria-pressed="false">Unlock line</button>
-        <button id="tech-draw-required" class="debug-wide" type="button" aria-pressed="false">Required line</button>
-      </div>
-      <p id="tech-selection" class="debug-note">Nothing selected</p>
-      <p id="tech-layout-status" class="debug-note"></p>
+      <p id="cell-state-status" class="debug-note"></p>
       </div>
       <div id="debug-environment" hidden>
+      <div class="debug-row">
+        <span>Time</span>
+        <button id="time-dec" type="button" aria-label="One hour earlier">−</button>
+        <span id="time-value">12:00</span>
+        <button id="time-inc" type="button" aria-label="One hour later">+</button>
+      </div>
       <div class="debug-row">
         <span>Sun angle</span>
         <button id="light-dec" type="button" aria-label="Decrease sun angle" disabled>−</button>
@@ -3439,7 +4017,7 @@
       </div>
       <div id="debug-motility">
       <div class="debug-row">
-        <button id="cell-wasd" class="debug-wide active" type="button" aria-pressed="true">WASD</button>
+        <button id="cell-wasd" class="debug-wide" type="button" aria-pressed="false">WASD</button>
       </div>
       <div class="debug-row">
         <span>Buoyin</span>
@@ -3675,12 +4253,8 @@
     <section id="genome-viewer" hidden aria-label="Genome Viewer">
       <header class="genome-titlebar">
         <div class="genome-heading">
-          <img class="genome-icon" src="/ui/genome_viewer/dna_icon_32x32.png" alt="" width="16" height="16" />
+          <img class="genome-icon" src="/ui/icons/new_icons/32x32/genome_viewer_32.png" alt="" width="16" height="16" />
           <h2 class="genome-title">Genome Viewer</h2>
-        </div>
-        <div class="genome-mode" role="tablist" aria-label="Genome mode">
-          <button type="button" class="genome-mode-tab" id="genome-mode-viewer" role="tab" aria-selected="true">Viewer</button>
-          <button type="button" class="genome-mode-tab" id="genome-mode-editor" role="tab" aria-selected="false">Editor</button>
         </div>
         <button type="button" class="genome-close" id="genome-viewer-close" aria-label="Close">X</button>
       </header>
@@ -3725,12 +4299,21 @@
           </section>
         </div>
       </div>
-      <div class="genome-editor" id="genome-editor-pane" hidden></div>
+    </section>
+    <section id="gene-editor" hidden aria-label="Gene Editor">
+      <header class="genome-titlebar">
+        <div class="genome-heading">
+          <img class="genome-icon" src="/ui/icons/new_icons/32x32/gene_editor_32.png" alt="" width="16" height="16" />
+          <h2 class="genome-title">Gene Editor</h2>
+        </div>
+        <button type="button" class="genome-close" id="gene-editor-close" aria-label="Close">X</button>
+      </header>
+      <div class="genome-editor" id="genome-editor-pane"></div>
     </section>
     <section id="codex" hidden aria-label="Codex">
       <header class="genome-titlebar">
         <div class="genome-heading">
-          <img class="genome-icon" src="/ui/32x32/codex (1).png" alt="" width="16" height="16" />
+          <img class="genome-icon" src="/ui/icons/new_icons/32x32/codex_32.png" alt="" width="16" height="16" />
           <h2 class="genome-title">Codex</h2>
         </div>
         <button type="button" class="genome-close" id="codex-close" aria-label="Close">X</button>
@@ -3758,7 +4341,7 @@
     <section id="tech-tree" hidden aria-label="Tech Tree">
       <header class="genome-titlebar">
         <div class="genome-heading">
-          <img class="genome-icon" src="/ui/32x32/gene_tech_tree_32.png" alt="" width="16" height="16" />
+          <img class="genome-icon" src="/ui/icons/new_icons/32x32/gene_tech_tree_32.png" alt="" width="16" height="16" />
           <h2 class="genome-title">Tech Tree</h2>
         </div>
         <button type="button" class="genome-close" id="tech-tree-close" aria-label="Close">X</button>
@@ -3766,6 +4349,23 @@
       <div class="tech-modes" role="tablist" aria-label="Tech trees">
         <button type="button" class="tech-mode" id="tech-mode-functional" role="tab" aria-selected="true">Functional</button>
         <button type="button" class="tech-mode" id="tech-mode-regulatory" role="tab" aria-selected="false">Regulatory</button>
+      </div>
+      <div class="tech-modes tech-categories" id="tech-categories" role="tablist" aria-label="Tech tree categories">
+        <div class="tech-category-group" id="tech-categories-functional">
+          <button type="button" class="tech-mode" data-category="Motility" role="tab" aria-selected="true">Motility</button>
+          <button type="button" class="tech-mode" data-category="Morphology" role="tab" aria-selected="false">Morphology</button>
+          <button type="button" class="tech-mode" data-category="Perception" role="tab" aria-selected="false">Perception</button>
+          <button type="button" class="tech-mode" data-category="Metabolism" role="tab" aria-selected="false">Metabolism</button>
+          <button type="button" class="tech-mode" data-category="Homeostasis" role="tab" aria-selected="false">Homeostasis</button>
+          <button type="button" class="tech-mode" data-category="Regulation" role="tab" aria-selected="false">Regulation</button>
+          <button type="button" class="tech-mode" data-category="Reproduction" role="tab" aria-selected="false">Reproduction</button>
+        </div>
+        <div class="tech-category-group" id="tech-categories-regulatory" hidden>
+          <button type="button" class="tech-mode" data-category="Promoter" role="tab" aria-selected="true">Promoter</button>
+          <button type="button" class="tech-mode" data-category="Expression" role="tab" aria-selected="false">Expression</button>
+          <button type="button" class="tech-mode" data-category="Destination" role="tab" aria-selected="false">Destination</button>
+          <button type="button" class="tech-mode" data-category="Position" role="tab" aria-selected="false">Position</button>
+        </div>
       </div>
       <div class="tech-body">
         <section class="tech-viewport" id="tech-viewport" aria-label="Gene unlock tree">
@@ -3790,7 +4390,7 @@
     <section id="expression" hidden aria-label="Expression">
       <header class="genome-titlebar">
         <div class="genome-heading">
-          <img class="genome-icon" src="/ui/32x32/expression (1).png" alt="" width="16" height="16" />
+          <img class="genome-icon" src="/ui/icons/new_icons/32x32/expression_viewer_32.png" alt="" width="16" height="16" />
           <h2 class="genome-title">Expression</h2>
         </div>
         <button type="button" class="genome-close" id="expression-close" aria-label="Close">X</button>
@@ -3860,10 +4460,13 @@
     <section id="settings" hidden aria-label="Settings">
       <header class="genome-titlebar">
         <div class="genome-heading">
-          <img class="genome-icon" src="/ui/settings_32x32.png" alt="" width="32" height="32" />
+          <img class="genome-icon" src="/ui/icons/settings_32.png" alt="" width="32" height="32" />
           <h2 class="genome-title">Settings</h2>
         </div>
-        <button type="button" class="genome-close" id="settings-close" aria-label="Close">X</button>
+        <div class="settings-title-actions">
+          <button type="button" class="genome-mode-tab" id="settings-apply" disabled>Apply</button>
+          <button type="button" class="genome-close" id="settings-close" aria-label="Close">X</button>
+        </div>
       </header>
       <div class="tech-modes" role="tablist" aria-label="Settings sections">
         <button type="button" class="tech-mode" id="settings-tab-audio" role="tab" aria-selected="true" aria-controls="settings-audio">Audio</button>
@@ -3871,7 +4474,7 @@
         <button type="button" class="tech-mode" id="settings-tab-gameplay" role="tab" aria-selected="false" aria-controls="settings-gameplay">Gameplay</button>
       </div>
       <div class="settings-body">
-        <img class="settings-mark" src="/ui/settings_64x64.png" alt="" width="64" height="64" />
+        <img class="settings-mark" src="/ui/icons/settings_64.png" alt="" width="64" height="64" />
         <div class="settings-fields">
           <div id="settings-audio" role="tabpanel" aria-labelledby="settings-tab-audio">
             <label class="settings-row">
@@ -3891,7 +4494,7 @@
               <input id="settings-scale" type="range" min="75" max="300" value="100" step="5" aria-label="UI scale" />
               <span class="settings-value" id="settings-scale-value">100%</span>
             </label>
-            <p class="settings-note">Matches this window. Moving this keeps your size.</p>
+            <p class="settings-note">Matches this window until you apply a size.</p>
           </div>
           <div id="settings-gameplay" role="tabpanel" aria-labelledby="settings-tab-gameplay" hidden>
             <p class="settings-empty">No gameplay options yet</p>
@@ -3907,7 +4510,7 @@
         </button>
       </div>
       <button type="button" class="settings-open" id="settings-open" aria-label="Settings" aria-pressed="false" aria-controls="settings">
-        <img src="/ui/settings_32x32.png" alt="" width="32" height="32" />
+        <img src="/ui/icons/settings_32.png" alt="" width="32" height="32" />
       </button>
       <p class="species-name" id="species-name"></p>
       <div class="species" id="species">
@@ -3937,27 +4540,32 @@
     <nav id="dock" aria-label="Sections">
       <div class="dock-tabs">
         <button type="button" class="dock-tab" data-dock="genome" aria-pressed="false">
-          <img class="dock-icon" src="/ui/32x32/genome (1).png" alt="" width="32" height="32" />
+          <img class="dock-icon" src="/ui/icons/new_icons/32x32/genome_viewer_32.png" alt="" width="32" height="32" />
           <span class="dock-name">Genome Viewer</span>
           <span class="dock-key">G</span>
         </button>
+        <button type="button" class="dock-tab" data-dock="gene-editor" aria-pressed="false">
+          <img class="dock-icon" src="/ui/icons/new_icons/32x32/gene_editor_32.png" alt="" width="32" height="32" />
+          <span class="dock-name">Gene Editor</span>
+          <span class="dock-key">X</span>
+        </button>
         <button type="button" class="dock-tab" data-dock="expression" aria-pressed="false">
-          <img class="dock-icon" src="/ui/32x32/expression (1).png" alt="" width="32" height="32" />
+          <img class="dock-icon" src="/ui/icons/new_icons/32x32/expression_viewer_32.png" alt="" width="32" height="32" />
           <span class="dock-name">Expression</span>
           <span class="dock-key">E</span>
         </button>
         <button type="button" class="dock-tab" data-dock="environment" aria-pressed="false">
-          <img class="dock-icon" src="/ui/32x32/environment (1).png" alt="" width="32" height="32" />
+          <img class="dock-icon" src="/ui/icons/new_icons/32x32/environment_32.png" alt="" width="32" height="32" />
           <span class="dock-name">Environment</span>
           <span class="dock-key">V</span>
         </button>
         <button type="button" class="dock-tab" data-dock="tech-tree" aria-pressed="false">
-          <img class="dock-icon" src="/ui/32x32/gene_tech_tree_32.png" alt="" width="32" height="32" />
+          <img class="dock-icon" src="/ui/icons/new_icons/32x32/gene_tech_tree_32.png" alt="" width="32" height="32" />
           <span class="dock-name">Tech Tree</span>
           <span class="dock-key">T</span>
         </button>
         <button type="button" class="dock-tab" data-dock="codex" aria-pressed="false">
-          <img class="dock-icon" src="/ui/32x32/codex (1).png" alt="" width="32" height="32" />
+          <img class="dock-icon" src="/ui/icons/new_icons/32x32/codex_32.png" alt="" width="32" height="32" />
           <span class="dock-name">Codex</span>
           <span class="dock-key">C</span>
         </button>

@@ -69,6 +69,7 @@ vec4 dissolved(vec2 uv) {
   return c;
 }
 vec3 pointGlow(vec2 world) {
+  if (uPointCount <= 0) return vec3(0.0);
   vec3 glow = vec3(0.0);
   for (int i = 0; i < 48; i++) {
     if (i >= uPointCount) break;
@@ -94,17 +95,20 @@ void main() {
   float seen = smoothstep(0.0, 0.08, light);
   vec3 deep = vec3(lit.r * 0.4, lit.g * 0.55, min(1.0, lit.b * 1.1 + 0.04));
   vec3 water = mix(lit, deep, away * seen) + pointGlow(world);
-  vec4 nutrient = dissolved(uv);
-  float weight = nutrient.r + nutrient.g + nutrient.b + nutrient.a;
-  vec3 hue = vec3(0.86, 0.68, 0.18) * nutrient.r
-    + vec3(0.92, 0.38, 0.08) * nutrient.g
-    + vec3(0.16, 0.55, 0.78) * nutrient.b
-    + vec3(0.62, 0.90, 0.78) * nutrient.a;
-  hue = weight > 0.0001 ? hue / weight : water;
-  float peak = max(max(nutrient.r, nutrient.g), max(nutrient.b, nutrient.a));
-  float open = smoothstep(0.012, 0.04, texture(uShore, uv).r);
-  float cover = peak * 0.4 * open * uShowNutrients;
-  fragColor = vec4(mix(water, hue, cover), 1.0);
+  if (uShowNutrients > 0.5) {
+    vec4 nutrient = dissolved(uv);
+    float weight = nutrient.r + nutrient.g + nutrient.b + nutrient.a;
+    vec3 hue = vec3(0.86, 0.68, 0.18) * nutrient.r
+      + vec3(0.92, 0.38, 0.08) * nutrient.g
+      + vec3(0.16, 0.55, 0.78) * nutrient.b
+      + vec3(0.62, 0.90, 0.78) * nutrient.a;
+    hue = weight > 0.0001 ? hue / weight : water;
+    float peak = max(max(nutrient.r, nutrient.g), max(nutrient.b, nutrient.a));
+    float open = smoothstep(0.012, 0.04, texture(uShore, uv).r);
+    float cover = peak * 0.4 * open;
+    water = mix(water, hue, cover);
+  }
+  fragColor = vec4(water, 1.0);
 }`;
 
 const PARTICLE_FS = `#version 300 es
@@ -210,13 +214,18 @@ vec2 eddy(vec2 p) {
 
 void main() {
   vec2 lit = uCamera + vClip * uHalfView;
-  float warmth = clamp((celsiusAt(lit) - 4.0) / 106.0, 0.0, 1.0);
-  float amp = warmth * warmth * 3.4;
-  vec2 world = layerPoint(uCamera, vClip, uHalfView, 0.75);
-  vec2 driftA = world + vec2(uTime * 0.022, uTime * 0.008) + eddy(world) * amp;
-  vec2 driftB = world + vec2(uTime * -0.012, uTime * 0.016) + eddy(world + vec2(70.0, 19.0)) * amp;
   float oxidex = clamp(oxidexAt(lit), 0.0, 1.0);
   float sulfex = clamp(sulfexAt(lit), 0.0, 1.0);
+  if (oxidex <= 0.015 && sulfex <= 0.015) discard;
+  float warmth = clamp((celsiusAt(lit) - 4.0) / 106.0, 0.0, 1.0);
+  vec2 world = layerPoint(uCamera, vClip, uHalfView, 0.75);
+  vec2 driftA = world + vec2(uTime * 0.022, uTime * 0.008);
+  vec2 driftB = world + vec2(uTime * -0.012, uTime * 0.016);
+  if (warmth > 0.0) {
+    float amp = warmth * warmth * 3.4;
+    driftA += eddy(world) * amp;
+    driftB += eddy(world + vec2(70.0, 19.0)) * amp;
+  }
   bool white = false;
   bool yellow = false;
   if (oxidex > 0.015) {

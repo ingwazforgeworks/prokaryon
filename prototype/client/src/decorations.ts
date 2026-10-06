@@ -29,6 +29,11 @@ export interface DecorationType {
 }
 
 const PARALLAX: Record<DecorationLayer, number> = { back: 0.42, mid: 0.78, fore: 1.28 };
+const DECO_CELL = 32;
+
+function decoKey(ix: number, iy: number): number {
+  return (ix + 64) * 1024 + (iy + 64);
+}
 const PARALLAX_REACH = 24;
 const SCALE: Record<DecorationLayer, number> = { back: 0.82, mid: 1, fore: 1.18 };
 const SHADE: Record<DecorationLayer, number> = { back: 0.72, mid: 1, fore: 1 };
@@ -86,6 +91,7 @@ float bayer8(vec2 pixel) {
   return float(pattern[index]) / 64.0;
 }
 vec3 pointGlow(vec2 world) {
+  if (uPointCount <= 0) return vec3(0.0);
   vec3 glow = vec3(0.0);
   for (int i = 0; i < 48; i++) {
     if (i >= uPointCount) break;
@@ -171,6 +177,9 @@ export class DecorationField {
   private anchorMigration = false;
   private ready = false;
   private loadFailed = false;
+  private gridDirty = true;
+  private readonly decoGrid = new Map<number, number[]>();
+  private readonly picked: number[] = [];
 
   constructor(private readonly gl: WebGL2RenderingContext) {
     this.program = link(gl, DECO_VS, DECO_FS);
@@ -201,6 +210,7 @@ export class DecorationField {
     const backNames = this.order.filter((type) => type.group === "back" && !type.name.startsWith("rock_")).map((type) => type.name);
     const foreNames = this.order.filter((type) => type.group === "fore").map((type) => type.name);
     if ((backDone || backNames.length === 0) && (foreDone || foreNames.length === 0)) return 0;
+    this.gridDirty = true;
     if (!backDone) {
       for (let index = this.stamps.length - 1; index >= 0; index -= 1) {
         if (this.stamps[index].border && this.stamps[index].layer === "back") this.stamps.splice(index, 1);
@@ -389,6 +399,7 @@ export class DecorationField {
     const version = 7;
     const done = this.stamps.some((stamp) => stamp.border && stamp.layer === "back" && stamp.borderVersion === version);
     if (!this.ready || done) return 0;
+    this.gridDirty = true;
     for (let index = this.stamps.length - 1; index >= 0; index -= 1) {
       const stamp = this.stamps[index];
       if (stamp.border && stamp.layer === "back" && stamp.name.startsWith("rock_")) this.stamps.splice(index, 1);
@@ -568,16 +579,19 @@ export class DecorationField {
       anchored: true,
     };
     this.stamps.push(stamp);
+    this.gridDirty = true;
     this.lastStamp = [x, y];
     this.nextGap = layer === "mid" ? 0.38 + Math.random() * 1.28 : 0.7;
     return () => {
       const index = this.stamps.indexOf(stamp);
       if (index >= 0) this.stamps.splice(index, 1);
+      this.gridDirty = true;
       return false;
     };
   }
 
   erase(x: number, y: number, camera: [number, number]): void {
+    this.gridDirty = true;
     const radius = 1.35;
     for (let i = this.stamps.length - 1; i >= 0; i -= 1) {
       const [vx, vy] = visual(this.stamps[i], camera);
@@ -594,10 +608,31 @@ export class DecorationField {
     pixelsPerUnit: number,
   ): void {
     if (!this.ready) return;
+    if (this.gridDirty) this.rebuildDecoGrid();
+    const picked = this.picked;
+    picked.length = 0;
+    const pad = 28;
+    const x0 = Math.floor((camera[0] - halfView[0] - pad) / DECO_CELL);
+    const x1 = Math.floor((camera[0] + halfView[0] + pad) / DECO_CELL);
+    const y0 = Math.floor((camera[1] - halfView[1] - pad) / DECO_CELL);
+    const y1 = Math.floor((camera[1] + halfView[1] + pad) / DECO_CELL);
+    for (let iy = y0; iy <= y1; iy += 1) {
+      for (let ix = x0; ix <= x1; ix += 1) {
+        const cell = this.decoGrid.get(decoKey(ix, iy));
+        if (!cell) continue;
+        for (let n = 0; n < cell.length; n += 1) {
+          const index = cell[n];
+          if (this.stamps[index]?.layer === layer) picked.push(index);
+        }
+      }
+    }
+    if (picked.length === 0) return;
+    picked.sort((a, b) => a - b);
     const gl = this.gl;
     let begun = false;
-    for (const stamp of this.stamps) {
-      if (stamp.layer !== layer) continue;
+    let bound: WebGLTexture | null = null;
+    for (let n = 0; n < picked.length; n += 1) {
+      const stamp = this.stamps[picked[n]];
       const sprite = this.sprites.get(stamp.name);
       if (!sprite) continue;
       const [cx, cy] = visual(stamp, camera);
@@ -624,7 +659,10 @@ export class DecorationField {
         gl.enableVertexAttribArray(0);
         gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       }
-      gl.bindTexture(gl.TEXTURE_2D, sprite.texture);
+      if (sprite.texture !== bound) {
+        bound = sprite.texture;
+        gl.bindTexture(gl.TEXTURE_2D, bound);
+      }
       gl.uniform2f(uniform(gl, this.program, "uCenter"), cx, cy);
       gl.uniform2f(uniform(gl, this.program, "uHalfSize"), sprite.hw * scale, sprite.hh * scale);
       gl.uniform1f(uniform(gl, this.program, "uRotation"), stamp.rotation);
@@ -633,6 +671,21 @@ export class DecorationField {
       gl.uniform1f(uniform(gl, this.program, "uDefocus"), stamp.defocus ?? 0);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
+  }
+
+  private rebuildDecoGrid(): void {
+    for (const list of this.decoGrid.values()) list.length = 0;
+    for (let index = 0; index < this.stamps.length; index += 1) {
+      const stamp = this.stamps[index];
+      const key = decoKey(Math.floor(stamp.x / DECO_CELL), Math.floor(stamp.y / DECO_CELL));
+      let list = this.decoGrid.get(key);
+      if (!list) {
+        list = [];
+        this.decoGrid.set(key, list);
+      }
+      list.push(index);
+    }
+    this.gridDirty = false;
   }
 
   private async prepare(): Promise<void> {
@@ -672,6 +725,7 @@ export class DecorationField {
         }
         this.stamps.push(stamp);
       }
+      this.gridDirty = true;
       this.ready = true;
       bootMark("decorations", 1);
     } catch (error) {
