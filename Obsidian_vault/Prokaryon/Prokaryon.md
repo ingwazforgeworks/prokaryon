@@ -1,6 +1,6 @@
 # Prokaryon — Design Wiki
 
-Working reference for the in-world content of **Prokaryon**. The authoritative rules documents are `Prokaryon_Development_Specification.md` and `Prokaryon_Implementation_Task_Backlog.md` outside this vault. This wiki holds the *content layer*: the named genes, resources, environmental fields, and concepts the player actually sees.
+Working reference for the in-world content of **Prokaryon**. The authoritative rules documents are `docs/Prokaryon_Development_Specification.md` and `docs/Prokaryon_Implementation_Task_Backlog.md`, outside this vault. This wiki holds the *content layer*: the named genes, resources, environmental fields, and concepts the player actually sees.
 
 Where the specification and this wiki disagree, the specification wins. Record design changes there and reflect the consequence here.
 
