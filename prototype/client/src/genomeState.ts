@@ -866,7 +866,41 @@ export function applySnapshot(value: GenomeSnapshot): void {
   notifyGenome(null);
 }
 
+/**
+ * Genome store for hosts that cannot run the save API. The Vercel deploy is a
+ * static build: the POST either 404s or the catch-all rewrite hands back the
+ * index page, so there the genome lives in localStorage instead of the
+ * checked-in JSON. Origins that do run the API never write this key, because
+ * their saves already answered 204.
+ */
+const STORAGE_KEY = "prokaryon:genome-state";
+
+function persistGenomeLocal(): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot()));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readGenomeLocal(): GenomeSnapshot | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? parseSnapshot(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadGenomeState(): Promise<void> {
+  // A saved local snapshot belongs to an origin without the save API, and it
+  // is newer than anything the static JSON can hold, so it wins.
+  const local = readGenomeLocal();
+  if (local) {
+    applySnapshot(local);
+    return;
+  }
   try {
     const response = await fetch("/genome-state.json", { cache: "no-store" });
     if (!response.ok) return;
@@ -885,10 +919,14 @@ export async function persistGenome(): Promise<boolean> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(snapshot()),
     });
-    return response.ok;
+    // The save API answers 204 with no body. Any other answer — a static
+    // host's 404, or its SPA rewrite returning the page as a 200 — saved
+    // nothing, so the genome falls back to localStorage.
+    if (response.status === 204) return true;
   } catch {
-    return false;
+    // No reachable API at all: same fallback.
   }
+  return persistGenomeLocal();
 }
 
 export function parseSnapshot(value: unknown): GenomeSnapshot | null {
