@@ -57,6 +57,17 @@ const FLAGELLUM_COLORS = [
 /** Secreted fragments draw thinner than the membrane needles they shed from. */
 const PILUS_FRAGMENT_WIDTH_SCALE = 0.35;
 
+/**
+ * Camera follow damping, in reciprocal seconds. The gameplay camera trails the
+ * cell behind its own thrust pulses: the ease filters the stroke-to-stroke
+ * speed swings so the view glides, and the steady-state trail at a constant
+ * swim speed is speed / rate — under a unit at full swim, a fraction of the
+ * body. The title glance pans on its own slow cosine, so it keeps the
+ * snappier follow that frames the menu swimmers exactly where the pan put them.
+ */
+const FOLLOW_RATE_GAMEPLAY = 6;
+const FOLLOW_RATE_TITLE = 18;
+
 const CILIUM_COLORS = [
   [0.42, 0.42, 0.44],
   [0.42, 0.42, 0.44],
@@ -1777,7 +1788,10 @@ export class CellRenderer {
       this.camera = [target[0], target[1]];
       return this.camera;
     }
-    const blend = 1 - Math.exp(-dt * 18);
+    // Exponential ease: frame-rate independent, and the residual gap closes
+    // on the same curve no matter the frame time.
+    const rate = this.smoothCamera ? FOLLOW_RATE_TITLE : FOLLOW_RATE_GAMEPLAY;
+    const blend = 1 - Math.exp(-dt * rate);
     this.camera[0] += (target[0] - this.camera[0]) * blend;
     this.camera[1] += (target[1] - this.camera[1]) * blend;
     return this.camera;
