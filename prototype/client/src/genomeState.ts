@@ -564,21 +564,34 @@ export function behaviorLine(value: Draft = draft): string {
   return `${promoter.activation} → ${gene.name} production${where}`;
 }
 
-// Placeholder costs in tenths, until the simulation reports real economy values.
-const AMOUNT_ATP_TENTHS: readonly number[] = [2, 5, 10, 20, 40, 80];
+// Upkeep in tenths of ATP per second, one slot per amount level 0-6 (OFF through
+// HYPER). The upkeep step charges exactly this per cassette, so the genome
+// viewer's "ATP upkeep" line is the live drain. A starter metabolizer - one
+// permease and one reductase at medium with a position tag each - draws 3 ATP/s,
+// so the 1000 ATP a new cell starts with runs dry in about five minutes unless
+// metabolism refills it. OFF is free: the tile's own text promises the gene
+// spends nothing while it is off.
+const AMOUNT_ATP_TENTHS: readonly number[] = [0, 2, 5, 10, 20, 40, 80];
 const PROMOTER_ATP_TENTHS: Record<string, number> = { CNST: 0, COND: 1, COSL: 1, GRAD: 2, OSCL: 1, THRS: 2 };
 const PROMOTER_MP: Record<string, number> = { CNST: 1, COND: 2, COSL: 3, GRAD: 3, OSCL: 3, THRS: 2 };
 const TAG_ATP_TENTHS = 5;
 const CODING_MP = 2;
 const DEFAULT_AMOUNT_LEVEL = 3;
 
-/** Placeholder ATP upkeep per second for one cassette, until the simulation reports real costs. */
+/** ATP upkeep per second for one cassette, charged every frame by the upkeep step. */
 export function cassetteAtpCost(cassette: Cassette): number {
   const level = Math.round(cassetteAmountLevel(cassette));
-  const amount = AMOUNT_ATP_TENTHS[Math.min(AMOUNT_ATP_TENTHS.length - 1, Math.max(0, level - 1))] ?? 10;
+  const amount = AMOUNT_ATP_TENTHS[Math.min(AMOUNT_ATP_TENTHS.length - 1, Math.max(0, level))] ?? 10;
   const promoter = PROMOTER_ATP_TENTHS[cassette.promoterId] ?? 2;
   const tags = (cassette.routeId === null ? 0 : 1) + (cassette.siteId === null ? 0 : 1);
   return (amount + promoter + tags * TAG_ATP_TENTHS) / 10;
+}
+
+/** Total ATP upkeep per second across a whole genome, in tenths to keep the sum clean. */
+export function genomeAtpUpkeep(cassettes: readonly Cassette[]): number {
+  let total = 0;
+  for (const cassette of cassettes) total += cassetteAtpCost(cassette);
+  return Math.round(total * 10) / 10;
 }
 
 /** Placeholder mutation point cost of assembling one cassette in the editor. */

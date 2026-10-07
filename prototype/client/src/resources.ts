@@ -1,6 +1,12 @@
 /** Per-pool storage limit until the simulation reports a real capacity. */
 export const STORAGE_CAPACITY = 1000;
 
+/**
+ * ATP a new cell starts with. Genome upkeep drains it toward zero in about
+ * five minutes for a starter metabolizer, unless the cell refills it.
+ */
+export const STARTING_ATP = 1000;
+
 /** Mutation points a new cell starts with. */
 export const STARTING_MUTATION_POINTS = 100;
 
@@ -78,7 +84,7 @@ const resources: CellResource[] = CATALOG.map((entry) => ({
   name: entry.name,
   group: entry.group,
   sprite: `/resources/${entry.file}`,
-  amount: 0,
+  amount: entry.id === "atp" ? STARTING_ATP : 0,
   capacity: STORAGE_CAPACITY,
   rate: 0,
 }));

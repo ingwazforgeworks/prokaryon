@@ -7,7 +7,7 @@ import { createInspect, playerCellTarget } from "./inspect";
 import { initGenomeEditor } from "./genomeEditor";
 import { initExpression, syncExpressionCell } from "./expression";
 import { initGenomeViewer } from "./genomeViewer";
-import { clearGenome, getGenome, loadGenomeState, persistGenome, subscribeGenome } from "./genomeState";
+import { clearGenome, genomeAtpUpkeep, getGenome, loadGenomeState, persistGenome, subscribeGenome } from "./genomeState";
 import {
   flagellinFromConstructs,
   genomeCanDriveFlagellin,
@@ -1441,6 +1441,19 @@ const applyGenomeRespiration = (timeSeconds: number, x: number, y: number, dt: n
   updateResource("atp", { amount: atpAmount, rate: atpRate });
 };
 
+// Genome upkeep: every committed construct drains ATP at the upkeep the genome
+// viewer displays for it, scaling with its expression tile. A starter
+// metabolizer draws about 3 ATP/s, so the 1000 ATP a new cell starts with
+// lasts around five minutes without production. The pool floors at zero;
+// what happens at zero is later work.
+const applyGenomeUpkeep = (dt: number): void => {
+  const atp = cellResources().find((resource) => resource.id === "atp");
+  if (!atp) return;
+  const drain = genomeAtpUpkeep(getGenome());
+  if (drain <= 0) return;
+  updateResource("atp", { amount: Math.max(0, atp.amount - drain * dt), rate: atp.rate - drain });
+};
+
 // Genome reproduction: expressed Anabolase grows the controlled cell toward
 // the size cap — the doubling time tracks the expression level — and expressed
 // Cyclin commits the cell to division once it has reached the minimum division
@@ -2861,6 +2874,7 @@ function frame(now: number): void {
   }
   const cell = controlledCell(posed);
   if (playing) applyGenomeRespiration(now / 1000, cell.x, cell.y, dt);
+  if (playing) applyGenomeUpkeep(dt);
   if (playing) applyGenomeReproduction(now / 1000, dt);
   const title = titleScreenOpen();
   if (title) {

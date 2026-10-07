@@ -3,7 +3,7 @@ import { resetUnlocks } from "./geneUnlocks";
 import { initGeneMaker, openGeneMaker } from "./geneMaker";
 import { persistGenome, resetGenomeState } from "./genomeState";
 import { playMarquee } from "./player";
-import { setMutationPoints, STARTING_MUTATION_POINTS } from "./resources";
+import { setMutationPoints, STARTING_ATP, STARTING_MUTATION_POINTS, updateResource } from "./resources";
 import { gameSettings, onGameSettings, setGameSettings, uiScale } from "./settings";
 import { playCue } from "./uiSound";
 
@@ -408,6 +408,7 @@ export function initTitleScreen(): void {
     void persistGenome();
     resetUnlocks();
     setMutationPoints(STARTING_MUTATION_POINTS);
+    updateResource("atp", { amount: STARTING_ATP, rate: 0 });
     phase = "lab";
     window.cancelAnimationFrame(microbeRaf);
     theme.pause();

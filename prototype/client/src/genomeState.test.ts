@@ -14,6 +14,7 @@ import {
   illegalDraftSlots,
   geneAcceptsRoute,
   geneAcceptsSite,
+  genomeAtpUpkeep,
   getDraft,
   getGenome,
   getInsertionIndex,
@@ -39,7 +40,7 @@ import {
   type Draft,
 } from "./genomeState";
 import { resetUnlocks, unlockGene, unlockPart, unlockedGeneIds } from "./geneUnlocks";
-import { mutationPointCount, setMutationPoints, STARTING_MUTATION_POINTS } from "./resources";
+import { cellResources, mutationPointCount, setMutationPoints, STARTING_ATP, STARTING_MUTATION_POINTS } from "./resources";
 import { applyRequirementEdges, type TechEdge } from "./techTree";
 
 let failed = 0;
@@ -425,6 +426,22 @@ const bareCassette: Cassette = {
   amountId: null,
 };
 check(cassetteAtpCost(bareCassette) === 1 && cassetteMutationCost(bareCassette) === 6, "a cassette without an amount uses the medium baseline");
+
+// Upkeep is charged at runtime, so the scale carries the new-cell economy.
+const offCassette: Cassette = { ...hyperCassette, uid: "cost-off", amountId: "OFF" };
+check(cassetteAtpCost(offCassette) === 0, "a silenced cassette spends nothing, as its tile promises");
+const microCassette: Cassette = { ...hyperCassette, uid: "cost-micro", amountId: "MICRO" };
+check(cassetteAtpCost(microCassette) === 0.2, "microexpression upkeep is 0.2 ATP per second");
+check(genomeAtpUpkeep([]) === 0, "an empty genome has no upkeep");
+check(genomeAtpUpkeep([hyperCassette, hyperCassette]) === 16, "upkeep sums across constructs");
+// Calibration: the starter metabolizer - one transmembrane permease and one
+// cytosolic reductase at medium - runs a new cell's starting ATP dry in
+// about five minutes when nothing refills it.
+const starterPermease: Cassette = { ...hyperCassette, uid: "cal-permease", amountId: "MED", routeId: "TransmembraneSignal" };
+const starterReductase: Cassette = { ...hyperCassette, uid: "cal-reductase", amountId: "MED", routeId: "CYTO" };
+const dryMinutes = STARTING_ATP / genomeAtpUpkeep([starterPermease, starterReductase]) / 60;
+check(dryMinutes > 4.5 && dryMinutes < 6.5, `the starter metabolizer runs dry in about five minutes (${dryMinutes.toFixed(1)})`);
+check(cellResources().find((resource) => resource.id === "atp")?.amount === STARTING_ATP, "a new cell starts with 1000 ATP");
 
 if (failed > 0) {
   throw new Error(`${failed} genome editor checks failed`);
