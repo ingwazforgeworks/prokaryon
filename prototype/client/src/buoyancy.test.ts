@@ -1,9 +1,12 @@
 import {
+  BUOYANCY_DRIFT_ACCELERATION,
+  BUOYANCY_DRIFT_MAX_SPEED,
   buoyancyExpressionLevel,
   buoyancyVelocity,
   genomeCanDriveBuoyancy,
   MAX_RISE_SPEED,
   MAX_SINK_SPEED,
+  stepBuoyancyVelocity,
 } from "./buoyancy";
 import type { FlagellinConstruct } from "./flagellinDistribution";
 
@@ -34,6 +37,23 @@ const partialSink = buoyancyVelocity(400, 0, 0.5);
 check(partialSink === -0.5 * MAX_SINK_SPEED, `half ballastin above its line sinks at ${partialSink}`);
 const partialRise = buoyancyVelocity(-400, 0.5, 0);
 check(partialRise === 0.5 * MAX_RISE_SPEED, `half buoyin below its line rises at ${partialRise}`);
+
+// --- Hydrodynamic drag on the drift ---
+// The drift accelerates toward its target instead of snapping to it, so
+// oscillating buoyin and ballastin levels swing the cell smoothly.
+
+check(stepBuoyancyVelocity(0, 6, 0) === 0, "a zero-length step keeps the current drift");
+check(stepBuoyancyVelocity(0, 6, 0.1) === 1, "the drift accelerates toward its target at the drag rate");
+check(stepBuoyancyVelocity(0, -6, 10) === -6, "a long step settles on the target without overshooting");
+check(
+  Math.abs(stepBuoyancyVelocity(6, -6, 1 / 60) - (6 - BUOYANCY_DRIFT_ACCELERATION / 60)) < 1e-9,
+  "a rapid direction flip only eases partway in one frame",
+);
+check(stepBuoyancyVelocity(11.5, 12, 1) === BUOYANCY_DRIFT_MAX_SPEED, "the drift clamps at the maximum rise speed");
+check(stepBuoyancyVelocity(-11.5, -12, 1) === -BUOYANCY_DRIFT_MAX_SPEED, "the drift clamps at the maximum sink speed");
+let churned = 0;
+for (let i = 0; i < 5; i++) churned = stepBuoyancyVelocity(churned, i % 2 === 0 ? 6 : -6, 1 / 60);
+check(Math.abs(churned) < 1, "an alternating target churns near the middle instead of slamming between extremes");
 
 if (failed > 0) throw new Error(`${failed} buoyancy checks failed`);
 console.log("buoyancy checks passed");

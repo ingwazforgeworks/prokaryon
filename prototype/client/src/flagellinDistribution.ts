@@ -6,7 +6,10 @@ import type { FlagellumSite } from "./shape";
  */
 
 /** Promoters whose expression is simulated. Others produce no protein yet. */
-export const EXPRESSED_PROMOTERS = new Set(["CNST", "OSCL"]);
+export const EXPRESSED_PROMOTERS = new Set(["CNST", "OSCL", "COSL"]);
+
+/** Promoters that swing on the oscillation clock instead of holding steady. */
+const OSCILLATING_PROMOTERS = new Set(["OSCL", "COSL"]);
 
 /** Flagellin only assembles extracellular flagella when it is secreted. */
 const FUNCTIONAL_ROUTES = new Set(["SecretoryPeptide"]);
@@ -193,11 +196,20 @@ export function motorExpressionLevel(
 /**
  * Smooth sine phase in [0, 1] for oscillatory promoters: 0 at t=0, rising
  * through 0.5 at the half period, 1 at the crest, back to the trough. Constant
- * promoters stay pinned at full output.
+ * promoters stay pinned at full output. Co-oscillatory runs the same cycle
+ * perfectly out of phase — crest at t=0, trough at the half period — so the two
+ * phases always sum to 1.
  */
 function promoterPhase(promoterId: string, timeSeconds: number): number {
-  if (promoterId !== "OSCL") return 1;
-  return 0.5 - 0.5 * Math.cos((2 * Math.PI * timeSeconds) / OSCILLATION_PERIOD_SECONDS);
+  if (!OSCILLATING_PROMOTERS.has(promoterId)) return 1;
+  const swing = 0.5 - 0.5 * Math.cos((2 * Math.PI * timeSeconds) / OSCILLATION_PERIOD_SECONDS);
+  return promoterId === "COSL" ? 1 - swing : swing;
+}
+
+/** Protein output of one construct. Unsimulated promoters produce nothing. */
+export function expressedAmount(construct: FlagellinConstruct, timeSeconds = 0): number {
+  if (!EXPRESSED_PROMOTERS.has(construct.promoterId)) return 0;
+  return producedAmount(construct, timeSeconds);
 }
 
 /**
@@ -206,7 +218,7 @@ function promoterPhase(promoterId: string, timeSeconds: number): number {
  * baseline, and a nonsensical min/max pair is clamped into order.
  */
 function producedAmount(construct: FlagellinConstruct, timeSeconds: number): number {
-  if (construct.promoterId !== "OSCL") {
+  if (!OSCILLATING_PROMOTERS.has(construct.promoterId)) {
     return construct.amountId !== null ? (AMOUNT_YIELD[construct.amountId] ?? UNTAGGED_YIELD) : UNTAGGED_YIELD;
   }
   const min = construct.amountMinId !== null && construct.amountMinId !== undefined
@@ -284,5 +296,5 @@ export function genomeCanDriveFlagellin(constructs: readonly FlagellinConstruct[
 
 /** Whether any simulated construct oscillates and needs per-frame updates. */
 export function genomeHasOscillation(constructs: readonly FlagellinConstruct[]): boolean {
-  return constructs.some((construct) => construct.promoterId === "OSCL");
+  return constructs.some((construct) => OSCILLATING_PROMOTERS.has(construct.promoterId));
 }

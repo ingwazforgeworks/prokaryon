@@ -9,14 +9,41 @@ export const MAX_SINK_SPEED = 12;
 const EASE = 0.008;
 
 /**
+ * Hydrodynamic drag on the drift, in world units per second squared. The
+ * cell is a small body in water, so its actual vertical velocity accelerates
+ * toward the buoyancy target instead of snapping to it: oscillating vesicle
+ * or granule levels swing the drift smoothly, and a rapid flip in the net
+ * force only ramps the velocity at this rate.
+ */
+export const BUOYANCY_DRIFT_ACCELERATION = 10;
+
+/** The drifting velocity is clamped to this magnitude whatever the target does. */
+export const BUOYANCY_DRIFT_MAX_SPEED = MAX_SINK_SPEED;
+
+/**
+ * Advances the drift's vertical velocity toward the buoyancy target over one
+ * step. The velocity change is capped by the drag acceleration over dt, and
+ * the result by the maximum drift speed. dt <= 0 keeps the current velocity.
+ */
+export function stepBuoyancyVelocity(current: number, target: number, dtSeconds: number): number {
+  if (dtSeconds <= 0) return current;
+  const desired = target - current;
+  const maxDelta = BUOYANCY_DRIFT_ACCELERATION * dtSeconds;
+  const delta = Math.abs(desired) <= maxDelta ? desired : Math.sign(desired) * maxDelta;
+  const next = current + delta;
+  return Math.min(BUOYANCY_DRIFT_MAX_SPEED, Math.max(-BUOYANCY_DRIFT_MAX_SPEED, next));
+}
+
+/**
  * Vertical drift from the buoyin and ballastin sliders. Positive rises.
  * Each slider is a rate, and it only acts on one side of its pressure line.
  * Ballastin sinks while pressure is below the slider, which is above that
  * depth. Buoyin rises while pressure is above `1 - buoyin`, which is below
  * that depth. Zero on both holds still. Full ballastin and no buoyin sinks
  * anywhere above the bottom. The opposite rises anywhere below the surface.
- * The result adds to the cilia and flagella velocity for that move, and it
- * is not kept as swim momentum after the drift changes.
+ * The result is the drift's target velocity: it adds to the cilia and
+ * flagella velocity for that move, and the actual drift eases toward it under
+ * hydrodynamic drag (stepBuoyancyVelocity) rather than acting instantly.
  */
 export function buoyancyVelocity(y: number, buoyin: number, ballastin: number): number {
   const up = clamp01(buoyin);

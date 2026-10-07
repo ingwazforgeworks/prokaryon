@@ -18,10 +18,16 @@ export const GENE_MP_COSTS: Readonly<Record<string, number>> = {
   COHS: 1,
   BUOY: 1,
   BALA: 1,
+  ELGN: 1,
+  CRST: 1,
+  CRYS: 1,
+  GRTN: 1,
+  TPRN: 1,
+  ISPR: 1,
 };
 
-/** The top-level metabolism genes every cell carries from the start of its life. */
-export const DEFAULT_GENES: readonly string[] = ["ATPS", "FLUX", "FERP", "SLFP", "FERR", "SLFR"];
+/** The top-level genes every cell carries from the start of its life. */
+export const DEFAULT_GENES: readonly string[] = ["ATPS", "FLUX", "FERP", "SLFP", "FERR", "SLFR", "ANAB", "CYCL"];
 
 const defaultGenes = new Set(DEFAULT_GENES);
 
@@ -125,6 +131,27 @@ export function unlockGene(geneId: string): boolean {
   notify();
   void persistUnlocks();
   return true;
+}
+
+/**
+ * Debug grant: unlocks every purchasable tech-tree gene and every regulatory
+ * part, without spending mutation points or walking the prerequisite chains.
+ */
+export function unlockAllGenes(): void {
+  let added = false;
+  for (const geneId of Object.keys(GENE_MP_COSTS)) {
+    if (unlocked.has(geneId)) continue;
+    unlocked.add(geneId);
+    added = true;
+  }
+  for (const part of REGULATORY_PARTS) {
+    if (part.defaultUnlocked || unlocked.has(part.id)) continue;
+    unlocked.add(part.id);
+    added = true;
+  }
+  if (!added) return;
+  notify();
+  void persistUnlocks();
 }
 
 /**

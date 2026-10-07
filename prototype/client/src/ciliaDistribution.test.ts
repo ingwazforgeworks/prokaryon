@@ -72,7 +72,9 @@ check(drive(ciliumMotorFromConstructs([motorConstruct({ siteId: "ANTL" })])).x =
 check(drive(ciliumMotorFromConstructs([motorConstruct({ siteId: "AntiPolarLocalizationSignal" })])).y === -1, "an antipolar motor rows the cell toward the antilateral flank");
 check(drive(bipolar).strength === 0, "motors on opposing poles cancel to a standstill");
 check(drive(ciliumMotorFromConstructs([motorConstruct({ siteId: "BILT" })])).strength === 0, "motors on opposing flanks cancel to a standstill");
-check(drive(spread).strength === 0, "a motor spread over all four sites rows nowhere");
+const spreadDrive = drive(spread);
+check(spreadDrive.x === 0 && spreadDrive.y === 0 && spreadDrive.strength === 1, "an untagged motor keeps full strength without a direction");
+check(drive(ciliumMotorFromConstructs([motorConstruct({ amountId: "MICRO" })])).strength === 0.1, "an untagged motor's strength follows its expression");
 const mixed = ciliumMotorFromConstructs([
   motorConstruct({ siteId: "PolarLocalizationSignal", amountId: "MED" }),
   motorConstruct({ siteId: "LATR", amountId: "MED" }),
@@ -124,6 +126,11 @@ const idleSwim = settle(body({ ciliaMotor: drive(bipolar) }));
 check(Math.abs(idleSwim.vx) < 1e-6 && Math.abs(idleSwim.vy) < 1e-6, "a standstill motor leaves the coat idle");
 const gentleSwim = settle(body({ ciliaMotor: { x: 0, y: 1, strength: 0.1 } }));
 check(gentleSwim.vy > 0 && gentleSwim.vy < polarSwim.vy * 0.6, "motor strength scales the push");
+const untaggedSwim = settle(body({ ciliaMotor: spreadDrive }));
+check(Math.abs(untaggedSwim.vx) < 1e-6 && Math.abs(untaggedSwim.vy) < 1e-6, "an untagged motor flaps the coat without pushing the cell");
+check(Math.abs(untaggedSwim.vx) < 1e-6 && spreadDrive.strength === 1, "the untagged coat still beats at full strength while it stirs");
+const gentleUntaggedSwim = settle(body({ ciliaMotor: drive(ciliumMotorFromConstructs([motorConstruct({ amountId: "MICRO" })])) }));
+check(Math.abs(gentleUntaggedSwim.vx) < 1e-6 && Math.abs(gentleUntaggedSwim.vy) < 1e-6, "a weak untagged motor stirs without pushing too");
 
 if (failed > 0) throw new Error(`${failed} cilia distribution checks failed`);
 console.log("cilia distribution checks passed");

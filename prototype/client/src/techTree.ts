@@ -27,7 +27,7 @@ const DRAG_THRESHOLD = 5;
 
 type EdgeKind = "unlocks" | "required";
 
-type TechEdge = {
+export type TechEdge = {
   from: string;
   to: string;
   kind: EdgeKind;
@@ -1614,18 +1614,33 @@ function geneUnlockBlock(geneId: string): HTMLElement {
     filler.hidden = true;
     return filler;
   }
-  const affordable = mutationPointCount() >= cost;
+  const missing = missingGeneRequirements(geneId);
+  const block = document.createElement("div");
+  block.className = "tech-unlock-block";
+  if (missing.length > 0) {
+    const reasons = document.createElement("p");
+    reasons.className = "genome-detail-meta";
+    reasons.textContent = missing.join(" · ");
+    block.append(reasons);
+  }
+  const affordable = missing.length === 0 && mutationPointCount() >= cost;
   const button = document.createElement("button");
   button.type = "button";
   button.className = "tech-unlock";
   button.textContent = affordable ? `Unlock · ${cost} MP` : `Unlock · needs ${cost} MP`;
-  button.title = affordable ? `Spend ${cost} mutation point${cost === 1 ? "" : "s"} to unlock this gene` : "Not enough mutation points";
+  button.title =
+    missing.length > 0
+      ? "Prerequisites are still locked"
+      : affordable
+        ? `Spend ${cost} mutation point${cost === 1 ? "" : "s"} to unlock this gene`
+        : "Not enough mutation points";
   button.disabled = !affordable;
   button.addEventListener("click", () => {
-    if (unlockGene(geneId)) playCue("success");
+    if (missing.length === 0 && unlockGene(geneId)) playCue("success");
     else playCue("deny");
   });
-  return button;
+  block.append(button);
+  return block;
 }
 
 function partUnlockBlock(id: string): HTMLElement {
@@ -1708,18 +1723,27 @@ function edgeClass(kind: EdgeKind): string {
   return "tech-edge is-unlocks";
 }
 
-export function missingGeneRequirements(geneId: string, present: ReadonlySet<string>): string[] {
-  const incoming = requirementEdges.filter((edge) => edge.to === geneId);
+export function missingGeneRequirements(geneId: string, edges: readonly TechEdge[] = requirementEdges): string[] {
+  const incoming = edges.filter((edge) => edge.to === geneId);
   const reasons: string[] = [];
   const nameOf = (id: string): string => GENES.find((gene) => gene.id === id)?.name ?? id;
   for (const edge of incoming) {
-    if (edge.kind !== "required" || present.has(edge.from)) continue;
-    reasons.push(`Requires ${nameOf(edge.from)} in the genome`);
+    if (edge.kind !== "required" || isGeneUnlocked(edge.from)) continue;
+    reasons.push(`Requires ${nameOf(edge.from)}`);
   }
   const unlocks = incoming.filter((edge) => edge.kind === "unlocks");
-  if (unlocks.length > 0 && !unlocks.some((edge) => present.has(edge.from))) {
+  if (unlocks.length > 0 && !unlocks.some((edge) => isGeneUnlocked(edge.from))) {
     const names = unlocks.map((edge) => nameOf(edge.from));
     reasons.push(names.length === 1 ? `Unlocked by ${names[0]}` : `Unlocked by ${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`);
   }
   return reasons;
+}
+
+/**
+ * Debug/test hook: replaces the functional-tree requirement edges outright.
+ * initTechTree normally fills these from the saved layout, which Node tests
+ * cannot fetch.
+ */
+export function applyRequirementEdges(edges: readonly TechEdge[]): void {
+  requirementEdges = edges.map((edge) => ({ ...edge }));
 }

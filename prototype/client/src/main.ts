@@ -1,4 +1,4 @@
-import { buoyancyExpressionLevel, buoyancyVelocity, genomeCanDriveBuoyancy } from "./buoyancy";
+import { buoyancyExpressionLevel, buoyancyVelocity, genomeCanDriveBuoyancy, stepBuoyancyVelocity } from "./buoyancy";
 import { bootFinish, bootMark } from "./boot";
 import { initCodex } from "./codex";
 import { initDock, onEnvironmentVisible } from "./dock";
@@ -18,10 +18,11 @@ import {
   type FlagellarBeatState,
   type FlagellinBySite,
 } from "./flagellinDistribution";
-import { loadUnlocks } from "./geneUnlocks";
+import { loadUnlocks, unlockAllGenes } from "./geneUnlocks";
 import { capsuleGap, capsulesOverlap, type Capsule } from "./cellCollision";
 import { permeaseExpressionLevel, stepPermeaseUptake } from "./permeaseUptake";
 import { reductaseExpressionLevel, stepReductase } from "./reductase";
+import { anabolaseExpressionLevel, cyclinExpressionLevel, cyclinTriggersDivision, stepAnabolaseGrowth } from "./reproduction";
 import {
   CILIATION_MAX,
   cilinFromConstructs,
@@ -31,6 +32,15 @@ import {
   type CiliumMotorDrive,
 } from "./ciliaDistribution";
 import { genomeCanDriveLubricin, lubricinExpressionLevel } from "./lubricin";
+import {
+  cytosolicMorphologyLevel,
+  genomeCanDriveCytosolicMorphology,
+  genomeCanDriveSecretedMorphology,
+  genomeCanDriveTaperin,
+  secretedMorphologyLevel,
+  taperinCellTaper,
+} from "./morphologyDistribution";
+import { PILIN_LENGTH_VARIANCE, genomeCanDrivePilin, pilinFromConstructs, pilinSecretedFromConstructs, type PilinCoat } from "./pilinDistribution";
 import { loadCellState, saveCellState } from "./debugCellState";
 import { initTechTree } from "./techTree";
 import { initPlayer } from "./player";
@@ -49,7 +59,8 @@ import { acceptedVelocity, collisionSpin, flagellarPulseLabel, independentPulseS
 import { TAPER_ALL, TAPER_ANTILATERAL, TAPER_ANTIPOLAR, TAPER_LATERAL, TAPER_POLAR, capsuleArea, cellSeparation, ciliaPlacements, curvedHalfExtents, divisionAxisOffset, flagellarBodyLength, maxPiliOnSite, orientedCapsule, piliPlacements, pilusVolumeSamples, vibrioHalfAngle, type BodyShape, type FlagellumSite, type PilusSite, type PosedBody } from "./shape";
 import { adhesinPull, terrainSlideKeep } from "./terrain";
 import { texelIdAt } from "./texels";
-import type { CellSnapshot, CellTaper, CiliaSwitch, CiliumSnapshot, FlagellumSnapshot, PilusSnapshot, ViewSnapshot } from "./types";
+import type { CellSnapshot, CellTaper, CiliaSwitch, CiliumSnapshot, FlagellumSnapshot, PilusFragmentSnapshot, PilusSnapshot, ViewSnapshot } from "./types";
+import { initialPilusEjection, pilusFragmentAlpha, stepPilusEjection, type PilusEmitter, type PilusEjectionState } from "./pilusEjection";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view");
 if (!canvas) throw new Error("missing canvas");
@@ -79,6 +90,11 @@ let girth = 0;
 let crescent = 0;
 let buoyin = 0;
 let ballastin = 0;
+// Actual vertical drift velocity. It accelerates toward the buoyancy target
+// under hydrodynamic drag instead of tracking it instantly, so oscillating
+// buoyin and ballastin levels swing the cell smoothly rather than flipping
+// its direction every frame.
+let buoyancyDriftVelocity = 0;
 let lubricin = 0;
 let adhesin = 0;
 let antipolarFlagellin = 0;
@@ -96,6 +112,17 @@ let piliCount = 0;
 let piliLength = 0.55;
 let piliVariance = 0;
 let pilusSite: PilusSite = "polar";
+// Transmembrane pili stand as spikes on the membrane. Secreted pili shed
+// fragments from the emergence regions instead, and the recoil pushes the
+// cell. The sandbox mode buttons pick between the two until the genome
+// expresses pilin; then each construct's route decides — transmembrane
+// constructs stand spikes on their regions and secreted constructs eject
+// from theirs, and the two can run at once.
+let pilusMode: "transmembrane" | "secreted" = "transmembrane";
+let pilusEjection: PilusEjectionState = initialPilusEjection();
+let genomeDrivesPilinState = false;
+let genomePilinCoats: PilinCoat[] = [];
+let genomeSecretedPilinCoats: PilinCoat[] = [];
 let taperMask = 0;
 let taperPolarDegree = 1;
 let taperAntipolarDegree = 1;
@@ -173,6 +200,8 @@ type CellDrive = {
   piliLength: number;
   piliVariance: number;
   pilusSite: PilusSite;
+  /** Per-region needles from expressed pilin. Null leaves the sandbox pili controls in charge. */
+  piliCoats: readonly PilinCoat[] | null;
   undulation: number;
   undulationBySite: FlagellinBySite | null;
   pulse: number;
@@ -246,6 +275,11 @@ paintMutationPoints();
 onResources(paintMutationPoints);
 mutationPointsDec.addEventListener("click", () => setMutationPoints(mutationPointCount() - 1));
 mutationPointsInc.addEventListener("click", () => setMutationPoints(mutationPointCount() + 1));
+const unlockAllGenesButton = document.querySelector<HTMLButtonElement>("#unlock-all-genes");
+if (!unlockAllGenesButton) throw new Error("missing unlock all genes");
+unlockAllGenesButton.addEventListener("click", () => {
+  unlockAllGenes();
+});
 const deleteAllGenes = document.querySelector<HTMLButtonElement>("#delete-all-genes");
 if (!deleteAllGenes) throw new Error("missing delete all genes");
 deleteAllGenes.addEventListener("click", () => {
@@ -349,6 +383,8 @@ const piliAntipolarButton = document.querySelector<HTMLButtonElement>("#pili-ant
 const piliLateralButton = document.querySelector<HTMLButtonElement>("#pili-lateral");
 const piliAntilateralButton = document.querySelector<HTMLButtonElement>("#pili-antilateral");
 const piliAllButton = document.querySelector<HTMLButtonElement>("#pili-all");
+const piliModeTransmembraneButton = document.querySelector<HTMLButtonElement>("#pili-mode-transmembrane");
+const piliModeSecretedButton = document.querySelector<HTMLButtonElement>("#pili-mode-secreted");
 const undulationSlider = document.querySelector<HTMLInputElement>("#cell-undulation");
 const undulationReadout = document.querySelector<HTMLElement>("#cell-undulation-value");
 const pulseSlider = document.querySelector<HTMLInputElement>("#cell-pulse");
@@ -381,6 +417,7 @@ const heatButton = document.querySelector<HTMLButtonElement>("#terrain-heat");
 const heatSizeReadout = document.querySelector<HTMLElement>("#heat-size");
 const heatDec = document.querySelector<HTMLButtonElement>("#heat-dec");
 const heatInc = document.querySelector<HTMLButtonElement>("#heat-inc");
+const zoomFreeButton = document.querySelector<HTMLButtonElement>("#zoom-free");
 const texelButton = document.querySelector<HTMLButtonElement>("#texel-grid");
 const temperatureButton = document.querySelector<HTMLButtonElement>("#temperature-overlay");
 const oxidexButton = document.querySelector<HTMLButtonElement>("#oxidex-overlay");
@@ -516,6 +553,7 @@ if (
   !heatSizeReadout ||
   !heatDec ||
   !heatInc ||
+  !zoomFreeButton ||
   !texelButton ||
   !temperatureButton ||
   !oxidexButton ||
@@ -550,7 +588,9 @@ if (
   !piliAntipolarButton ||
   !piliLateralButton ||
   !piliAntilateralButton ||
-  !piliAllButton
+  !piliAllButton ||
+  !piliModeTransmembraneButton ||
+  !piliModeSecretedButton
 ) {
   throw new Error("missing pili controls");
 }
@@ -1033,6 +1073,18 @@ type PiliRecent = {
 };
 const piliRecent: PiliRecent[] = [];
 
+function placePilinCoats(form: CellForm, crystal: boolean, coats: readonly PilinCoat[]): PilusSnapshot[] {
+  const body = cellDimensions(form.scale, form.elongation, form.girth, form.crescent);
+  const placed: PilusSnapshot[] = [];
+  for (const coat of coats) {
+    const count = Math.min(coat.count, maxPiliOnSite(PILI_MAX, coat.site));
+    placed.push(
+      ...piliPlacements(count, coat.length, PILIN_LENGTH_VARIANCE, coat.site, body.length, body.width, body.bend, crystal, form.taper),
+    );
+  }
+  return placed;
+}
+
 function piliFor(
   form: CellForm = playerForm(),
   crystal = membraneStyle === 3,
@@ -1040,7 +1092,21 @@ function piliFor(
   length = piliLength,
   variance = piliVariance,
   site: PilusSite = pilusSite,
+  coats?: readonly PilinCoat[] | null,
 ): PilusSnapshot[] {
+  // Omitted coats follow the genome when pilin owns the cell. An explicit null
+  // keeps the sandbox count and site, which is what menu swimmers pass.
+  const resolved = coats === undefined ? (genomeDrivesPilinState ? genomePilinCoats : null) : coats;
+  if (resolved) {
+    const key = `coat|${resolved.map((coat) => `${coat.site}:${coat.count}:${coat.length}`).join(",")}|${formKey(form)}|${crystal ? 1 : 0}`;
+    let placed = piliCache.get(key);
+    if (!placed) {
+      if (piliCache.size > 48) piliCache.clear();
+      placed = placePilinCoats(form, crystal, resolved);
+      piliCache.set(key, placed);
+    }
+    return placed;
+  }
   for (let index = piliRecent.length - 1; index >= 0; index -= 1) {
     const recent = piliRecent[index];
     if (
@@ -1092,8 +1158,9 @@ function pilusProbes(
   length = piliLength,
   variance = piliVariance,
   site: PilusSite = pilusSite,
+  coats?: readonly PilinCoat[] | null,
 ): Array<[number, number]> {
-  return pilusVolumeSamples(piliFor(form, crystal, count, length, variance, site));
+  return pilusVolumeSamples(piliFor(form, crystal, count, length, variance, site, coats));
 }
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
@@ -1373,6 +1440,36 @@ const applyGenomeRespiration = (timeSeconds: number, x: number, y: number, dt: n
   }
   updateResource("atp", { amount: atpAmount, rate: atpRate });
 };
+
+// Genome reproduction: expressed Anabolase grows the controlled cell toward
+// the size cap — the doubling time tracks the expression level — and expressed
+// Cyclin commits the cell to division once it has reached the minimum division
+// size (1.0, twice the 0.5 floor, so both halved daughters stay legal). Growth
+// pauses mid-division, and without Cyclin the cell simply grows past 1.0 until
+// the player divides by hand.
+const applyGenomeReproduction = (timeSeconds: number, dt: number): void => {
+  const constructs = getGenome();
+  const dividing = division !== null;
+  if (!dividing) {
+    const grown = stepAnabolaseGrowth(cellScale, anabolaseExpressionLevel(constructs, timeSeconds), dt, SIZE_MAX);
+    if (grown !== cellScale) {
+      cellScale = grown;
+      renderer.setCellScale(cellScale);
+      pose.length = cellLength();
+      sizeSlider.value = String(cellScale);
+      sizeReadout.textContent = `${cellScale.toFixed(2)}×`;
+      refreshDivideControls();
+    }
+  }
+  if (cyclinTriggersDivision(cyclinExpressionLevel(constructs, timeSeconds), cellScale, dividing, DIVISION_MIN_SCALE)) {
+    const committed = commitDivision(playerForm(), controlledCiliaPresence, controlledPiliPresence);
+    division = committed.division;
+    if (committed.ciliaFade) controlledCiliaFade = committed.ciliaFade;
+    if (committed.piliFade) controlledPiliFade = committed.piliFade;
+    setShapeEnabled(false);
+    refreshDivideControls();
+  }
+};
 let genomeDrivesFlagellinState = false;
 const syncGenomeFlagellin = (): void => {
   const constructs = getGenome();
@@ -1462,12 +1559,24 @@ const applyGenomeCilia = (timeSeconds: number): void => {
   ciliaLength = coat.length;
   genomeCiliaMotor = ciliumMotorDrive(ciliumMotorFromConstructs(constructs, timeSeconds));
   // The drawn stroke follows the motor's dominant axis, so the coat visibly
-  // rows the way it is being pushed. The reverse button still flips it.
-  if (genomeCiliaMotor.strength > 0.02) {
+  // rows the way it is being pushed. The reverse button still flips it. A
+  // direction-less spread (an untagged motor) keeps the resting switch pattern.
+  if (genomeCiliaMotor.strength > 0.02 && (genomeCiliaMotor.x !== 0 || genomeCiliaMotor.y !== 0)) {
     const { x, y } = genomeCiliaMotor;
     ciliaSwitch = Math.abs(x) >= Math.abs(y) ? (x < 0 ? "lateral" : "antilateral") : (y > 0 ? "polar" : "antipolar");
   }
 };
+// A genome coat with no expressed motor holds still: the cilia grow, but
+// nothing rows them, so the renderer draws the hairs without a beat.
+const ciliaCoatStill = (): boolean => genomeDrivesCiliaState && !(genomeCiliaMotor.strength > 0.02);
+// A non-positional motor flaps the coat without a wave: orderedness reads as
+// zero, so the drawn cilia whip at random phases exactly like a sandbox coat
+// at zero order, and the swim layer pushes nowhere.
+const ciliaCoatOrder = (): boolean =>
+  genomeDrivesCiliaState &&
+  genomeCiliaMotor.strength > 0.02 &&
+  genomeCiliaMotor.x === 0 &&
+  genomeCiliaMotor.y === 0;
 const syncGenomeCilia = (): void => {
   // Potential-based check: an oscillatory construct resting at its trough must
   // not hand the coat back to the sandbox sliders for a moment.
@@ -1596,6 +1705,11 @@ const pilusSiteButtons = [
   ["all", piliAllButton],
 ] as const;
 
+const pilusModeButtons = [
+  ["transmembrane", piliModeTransmembraneButton],
+  ["secreted", piliModeSecretedButton],
+] as const;
+
 function piliCeiling(): number {
   return maxPiliOnSite(PILI_MAX, pilusSite);
 }
@@ -1639,6 +1753,96 @@ for (const [id, button] of pilusSiteButtons) {
 }
 syncPiliLimit();
 
+/**
+ * Whether the membrane pili stand as spikes. Once the genome expresses pilin,
+ * each construct's route decides: transmembrane constructs stand spikes and
+ * secreted constructs eject, so the spikes show exactly while a transmembrane
+ * coat is expressed. The sandbox mode buttons only decide until then.
+ */
+function membranePili(): boolean {
+  if (genomeDrivesPilinState) return genomePilinCoats.length > 0;
+  return pilusMode === "transmembrane";
+}
+
+function showPilusMode(mode: "transmembrane" | "secreted"): void {
+  pilusMode = mode;
+  // Fragments in flight belong to the mode that fired them; switching drops them.
+  pilusEjection = initialPilusEjection();
+  for (const [id, button] of pilusModeButtons) {
+    const on = id === mode;
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-pressed", String(on));
+  }
+}
+
+piliModeTransmembraneButton.addEventListener("click", () => showPilusMode("transmembrane"));
+piliModeSecretedButton.addEventListener("click", () => showPilusMode("secreted"));
+showPilusMode("transmembrane");
+
+// Genome pilin: expressed Pilin replaces the debug pili controls. Transmembrane
+// constructs stand spikes; secreted constructs eject fragments, with the fire
+// rate and fragment size following the expression level. Length variance stays
+// at full, and the position tag chooses the regions. The controls are zeroed
+// and disabled while the genome owns the gene.
+const applyGenomePilin = (timeSeconds: number): void => {
+  genomePilinCoats = pilinFromConstructs(getGenome(), timeSeconds);
+  genomeSecretedPilinCoats = pilinSecretedFromConstructs(getGenome(), timeSeconds);
+};
+const syncGenomePilin = (): void => {
+  // Potential-based check: an oscillatory construct resting at its trough must
+  // not hand the pili back to the sandbox controls for a moment.
+  if (genomeCanDrivePilin(getGenome())) {
+    genomeDrivesPilinState = true;
+    applyGenomePilin(performance.now() / 1000);
+    piliSlider.value = "0";
+    piliSlider.disabled = true;
+    piliSlider.title = "Driven by expressed pilin in the genome";
+    piliReadout.textContent = "0";
+    piliLengthSlider.value = "0";
+    piliLengthSlider.disabled = true;
+    piliLengthSlider.title = "Driven by expressed pilin in the genome";
+    piliLengthReadout.textContent = "0.00";
+    piliVarianceSlider.value = "0";
+    piliVarianceSlider.disabled = true;
+    piliVarianceSlider.title = "Driven by expressed pilin in the genome";
+    piliVarianceReadout.textContent = "0.00";
+    for (const [, button] of pilusSiteButtons) {
+      button.disabled = true;
+      button.title = "Driven by expressed pilin in the genome";
+    }
+    for (const [, button] of pilusModeButtons) {
+      button.disabled = true;
+      button.title = "Driven by expressed pilin in the genome";
+    }
+    return;
+  }
+  genomeDrivesPilinState = false;
+  genomePilinCoats = [];
+  genomeSecretedPilinCoats = [];
+  piliSlider.disabled = false;
+  piliSlider.title = "";
+  piliLengthSlider.disabled = false;
+  piliLengthSlider.title = "";
+  piliVarianceSlider.disabled = false;
+  piliVarianceSlider.title = "";
+  for (const [, button] of pilusSiteButtons) {
+    button.disabled = false;
+    button.title = "";
+  }
+  for (const [, button] of pilusModeButtons) {
+    button.disabled = false;
+    button.title = "";
+  }
+  piliLength = clamp(Number(piliLengthSlider.value), 0, 1);
+  piliLengthReadout.textContent = piliLength.toFixed(2);
+  piliVariance = clamp(Number(piliVarianceSlider.value), 0, 1);
+  piliVarianceReadout.textContent = piliVariance.toFixed(2);
+  const selected = pilusSiteButtons.find(([, button]) => button.classList.contains("active"));
+  showPilusSite(selected?.[0] ?? pilusSite);
+};
+subscribeGenome(syncGenomePilin);
+syncGenomePilin();
+
 undulationSlider.addEventListener("input", () => {
   undulation = clamp(Number(undulationSlider.value), 0, 2);
   undulationReadout.textContent = `${undulation.toFixed(2)}×`;
@@ -1672,6 +1876,11 @@ sizeSlider.addEventListener("input", () => {
   pushMorphology();
   refreshDivideControls();
 });
+
+// Genome membrane structure: set by syncGenomeMorphology below. Declared here
+// because applyMembrane keeps the thickness slider disabled while the genome
+// owns the membrane.
+let genomeDrivesMembraneState = false;
 
 const MEMBRANE_PX_DEFAULT = 1;
 const MEMBRANE_PX_MAX = 6;
@@ -1717,7 +1926,7 @@ function appliedMembranePx(): number {
 const applyMembrane = (broadcast = true): void => {
   const plain = membraneStyle === 0;
   const shown = appliedMembranePx();
-  membranePxSlider.disabled = plain;
+  membranePxSlider.disabled = plain || genomeDrivesMembraneState;
   membranePxSlider.max = String(plain ? MEMBRANE_PX_DEFAULT : MEMBRANE_PX_MAX);
   membranePxSlider.value = String(shown);
   membranePxReadout.textContent = `${shown} px`;
@@ -1750,6 +1959,158 @@ membranePxSlider.addEventListener("input", () => {
 
 membraneColorInput.addEventListener("input", () => applyMembrane());
 applyMembrane();
+
+// Genome morphology: expressed shape genes replace the debug controls, which
+// are zeroed and disabled while the genome is driving the cell's form.
+// Elongin, Girthin and Crescentin are cytosolic dials for the elongation,
+// girth and crescent sliders. Taperin adds a positional taper: its position
+// tag picks the pinched end and its expression level is the pinch depth.
+// Crystallin and Isoprene Synthase take over the membrane structure — any
+// expression installs the layer (crystal wins when both are secreted at
+// once) and the expression level sets the layer's thickness.
+let genomeDrivesElonginState = false;
+let genomeDrivesGirthinState = false;
+let genomeDrivesCrescentinState = false;
+let genomeDrivesTaperinState = false;
+let genomeDrivesMorphologyState = false;
+
+function membranePxForLevel(level: number): number {
+  return clamp(
+    Math.floor(MEMBRANE_PX_DEFAULT + level * (MEMBRANE_PX_MAX - MEMBRANE_PX_DEFAULT)),
+    MEMBRANE_PX_DEFAULT,
+    MEMBRANE_PX_MAX,
+  );
+}
+
+const applyGenomeMorphology = (timeSeconds: number): void => {
+  const constructs = getGenome();
+  if (genomeDrivesElonginState) {
+    elongation = cytosolicMorphologyLevel(constructs, "ELGN", timeSeconds);
+    pose.length = cellLength();
+  }
+  if (genomeDrivesGirthinState) girth = cytosolicMorphologyLevel(constructs, "GRTN", timeSeconds);
+  if (genomeDrivesCrescentinState) crescent = cytosolicMorphologyLevel(constructs, "CRST", timeSeconds);
+  if (genomeDrivesTaperinState) {
+    const taper = taperinCellTaper(constructs, timeSeconds);
+    taperMask = taper.mask;
+    taperPolarDegree = taper.polar;
+    taperAntipolarDegree = taper.antipolar;
+    taperLateralDegree = taper.lateral;
+    taperAntilateralDegree = taper.antilateral;
+  }
+  if (genomeDrivesMembraneState) {
+    const crystallin = secretedMorphologyLevel(constructs, "CRYS", timeSeconds);
+    const isoprene = secretedMorphologyLevel(constructs, "ISPR", timeSeconds);
+    if (crystallin > 0) {
+      membraneStyle = 3;
+      membranePx = membranePxForLevel(crystallin);
+    } else if (isoprene > 0) {
+      membraneStyle = ISOPRENOID_STYLE;
+      membranePx = membranePxForLevel(isoprene);
+    } else {
+      membraneStyle = 0;
+      membranePx = MEMBRANE_PX_DEFAULT;
+    }
+    renderer.setMembrane(appliedMembranePx(), membraneStyle, membraneColor());
+  }
+  pushMorphology();
+};
+
+const syncGenomeMorphology = (): void => {
+  // Potential-based checks: an oscillatory construct resting at its trough
+  // must not hand the shape back to the sandbox controls for a moment.
+  const constructs = getGenome();
+  genomeDrivesElonginState = genomeCanDriveCytosolicMorphology(constructs, "ELGN");
+  genomeDrivesGirthinState = genomeCanDriveCytosolicMorphology(constructs, "GRTN");
+  genomeDrivesCrescentinState = genomeCanDriveCytosolicMorphology(constructs, "CRST");
+  genomeDrivesTaperinState = genomeCanDriveTaperin(constructs);
+  genomeDrivesMembraneState =
+    genomeCanDriveSecretedMorphology(constructs, "CRYS") ||
+    genomeCanDriveSecretedMorphology(constructs, "ISPR");
+  genomeDrivesMorphologyState =
+    genomeDrivesElonginState ||
+    genomeDrivesGirthinState ||
+    genomeDrivesCrescentinState ||
+    genomeDrivesTaperinState ||
+    genomeDrivesMembraneState;
+
+  for (const [slider, readout, driving] of [
+    [elongationSlider, elongationReadout, genomeDrivesElonginState],
+    [girthSlider, girthReadout, genomeDrivesGirthinState],
+    [crescentSlider, crescentReadout, genomeDrivesCrescentinState],
+  ] as [HTMLInputElement, HTMLElement, boolean][]) {
+    if (driving) {
+      slider.value = "0";
+      slider.disabled = true;
+      slider.title = "Driven by expressed shape protein in the genome";
+      readout.textContent = "0.00";
+    } else {
+      slider.disabled = false;
+      slider.title = "";
+    }
+  }
+  if (!genomeDrivesElonginState) {
+    elongation = clamp(Number(elongationSlider.value), 0, 1);
+    elongationReadout.textContent = elongation.toFixed(2);
+    pose.length = cellLength();
+  }
+  if (!genomeDrivesGirthinState) {
+    girth = clamp(Number(girthSlider.value), 0, 1);
+    girthReadout.textContent = girth.toFixed(2);
+  }
+  if (!genomeDrivesCrescentinState) {
+    crescent = clamp(Number(crescentSlider.value), 0, 1);
+    crescentReadout.textContent = crescent.toFixed(2);
+  }
+
+  // Taperin keeps the user's sandbox taper configuration on the buttons and
+  // degree sliders, which only go disabled while the genome owns the taper.
+  for (const button of [taperPolarButton, taperAntipolarButton, taperLateralButton, taperAntilateralButton, taperAllButton]) {
+    button.disabled = genomeDrivesTaperinState;
+    button.title = genomeDrivesTaperinState ? "Driven by expressed taperin in the genome" : "";
+  }
+  for (const [slider, readout] of [
+    [taperPolarSlider, taperPolarReadout],
+    [taperAntipolarSlider, taperAntipolarReadout],
+    [taperLateralSlider, taperLateralReadout],
+    [taperAntilateralSlider, taperAntilateralReadout],
+  ] as [HTMLInputElement, HTMLElement][]) {
+    slider.disabled = genomeDrivesTaperinState;
+    slider.title = genomeDrivesTaperinState ? "Driven by expressed taperin in the genome" : "";
+  }
+  if (!genomeDrivesTaperinState) {
+    const allOn = taperAllButton.classList.contains("active");
+    taperMask = allOn
+      ? TAPER_ALL
+      : taperButtons.reduce((mask, [, bit, button]) => (button.classList.contains("active") ? mask | bit : mask), 0);
+    taperPolarDegree = clamp(Number(taperPolarSlider.value), 0, 1);
+    taperAntipolarDegree = clamp(Number(taperAntipolarSlider.value), 0, 1);
+    taperLateralDegree = clamp(Number(taperLateralSlider.value), 0, 1);
+    taperAntilateralDegree = clamp(Number(taperAntilateralSlider.value), 0, 1);
+    syncTaperButtons();
+    syncTaperDegrees();
+  }
+
+  // The membrane style buttons and thickness slider hand the layer to the
+  // genome while either structure protein is secreted; the colour input stays
+  // live either way. The buttons keep the user's selection, so removing the
+  // constructs restores it.
+  for (const [, button] of membraneButtons) {
+    button.disabled = genomeDrivesMembraneState;
+    button.title = genomeDrivesMembraneState ? "Driven by expressed membrane structure protein in the genome" : "";
+  }
+  membranePxSlider.disabled = genomeDrivesMembraneState;
+  membranePxSlider.title = genomeDrivesMembraneState ? "Driven by expressed membrane structure protein in the genome" : "";
+  if (!genomeDrivesMembraneState) {
+    membraneStyle = membraneButtons.find(([, button]) => button.classList.contains("active"))?.[0] ?? 0;
+    membranePx = clamp(Math.round(Number(membranePxSlider.value)), MEMBRANE_PX_DEFAULT, MEMBRANE_PX_MAX);
+    applyMembrane();
+  }
+
+  if (genomeDrivesMorphologyState) applyGenomeMorphology(performance.now() / 1000);
+};
+subscribeGenome(syncGenomeMorphology);
+syncGenomeMorphology();
 
 clearButton.addEventListener("click", () => {
   siblings.length = 0;
@@ -1814,6 +2175,13 @@ divideButton.addEventListener("click", () => {
 });
 
 refreshDivideControls();
+
+zoomFreeButton.addEventListener("click", () => {
+  const on = zoomFreeButton.getAttribute("aria-pressed") !== "true";
+  zoomFreeButton.classList.toggle("active", on);
+  zoomFreeButton.setAttribute("aria-pressed", String(on));
+  renderer.setZoomUnrestricted(on);
+});
 
 texelButton.addEventListener("click", () => {
   const on = texelButton.getAttribute("aria-pressed") !== "true";
@@ -2156,6 +2524,7 @@ function randomDrive(rng: () => number, flagellarSites: ReadonlyArray<(typeof ME
     piliLength: spanPick(rng, 0.15, 1),
     piliVariance: rng(),
     pilusSite: site,
+    piliCoats: null,
     undulation: spanPick(rng, 0.35, 2),
     undulationBySite: null,
     pulse: rng() < 0.22 ? 1 : spanPick(rng, 0.2, 0.92),
@@ -2218,7 +2587,7 @@ function placeMenuSwimmer(
   band: MenuBand,
 ): BodyPose | null {
   const body = cellDimensions(form.scale, form.elongation, form.girth, form.crescent);
-  const probes = pilusProbes(form, crystal, drive.piliCount, drive.piliLength, drive.piliVariance, drive.pilusSite);
+  const probes = pilusProbes(form, crystal, drive.piliCount, drive.piliLength, drive.piliVariance, drive.pilusSite, drive.piliCoats);
   const accept = (x: number, y: number, angle: number): BodyPose | null => {
     if (x < band.x0 || x > band.x1 || y < band.y0 || y > band.y1) return null;
     if (renderer.poseOverlaps(x, y, angle, body.length, body.width, body.bend, probes)) return null;
@@ -2366,7 +2735,7 @@ function menuSnapshot(cell: MenuSwimmer): CellSnapshot {
     ciliaReverse: drive.ciliaReverse,
     flagella: flagellaFor(cell.id, cell.form, drive.antipolar, drive.polar, drive.lateral, drive.antilateral),
     cilia: ciliaFor(cell.form, crystal, drive.ciliation, drive.ciliaLength),
-    pili: piliFor(cell.form, crystal, drive.piliCount, drive.piliLength, drive.piliVariance, drive.pilusSite),
+    pili: piliFor(cell.form, crystal, drive.piliCount, drive.piliLength, drive.piliVariance, drive.pilusSite, drive.piliCoats),
     piliCover: 1,
     membranePx: cell.membrane.px,
     membraneStyle: cell.membrane.style,
@@ -2466,6 +2835,10 @@ function frame(now: number): void {
   // Genome lubricin follows the same clock, so an oscillatory promoter swings
   // how much along-wall motion the cell keeps.
   if (genomeDrivesLubricinState) applyGenomeLubricin(now / 1000);
+  if (genomeDrivesPilinState) applyGenomePilin(now / 1000);
+  // Genome morphology follows the same clock, so oscillatory promoters swing
+  // the shape and the membrane layer through their sine cycle.
+  if (genomeDrivesMorphologyState) applyGenomeMorphology(now / 1000);
   const sample = session.sample();
   const view = sceneView(sample);
   if (!booted && renderer.worldReady()) {
@@ -2488,8 +2861,10 @@ function frame(now: number): void {
   }
   const cell = controlledCell(posed);
   if (playing) applyGenomeRespiration(now / 1000, cell.x, cell.y, dt);
+  if (playing) applyGenomeReproduction(now / 1000, dt);
   const title = titleScreenOpen();
   if (title) {
+    if (pilusEjection.fragments.length > 0) pilusEjection = initialPilusEjection();
     if (renderer.worldReady()) stepMenuShowcase(dt, view.pixels_per_unit);
   } else if (menuSwimmers.length > 0) releaseMenuShowcase();
   if (showingTitle && !title) renderer.placeCamera(cell.x, cell.y);
@@ -2510,7 +2885,7 @@ function frame(now: number): void {
   const drawn = title
     ? menuSwimmers.map((swimmer) => menuSnapshot(swimmer))
     : [cell, ...siblings.map((sibling) => siblingSnapshot(sibling, now))];
-  renderer.render(view, drawn, dt, debug.direction(), intensity, camera);
+  renderer.render(view, drawn, dt, debug.direction(), intensity, camera, title ? [] : pilusFragmentViews());
   refreshSpecies();
   publishInspect(cell);
   syncExpressionCell(cell);
@@ -2591,7 +2966,128 @@ function nudgeOffTerrain(): void {
   pose.y = fitted.y;
 }
 
+/** Fragments in flight, ready for the renderer, with their faded opacity. */
+function pilusFragmentViews(): PilusFragmentSnapshot[] {
+  return pilusEjection.fragments.map((fragment) => ({
+    x: fragment.x,
+    y: fragment.y,
+    dirX: fragment.dirX,
+    dirY: fragment.dirY,
+    length: fragment.length,
+    alpha: pilusFragmentAlpha(fragment),
+  }));
+}
+
+/**
+ * One emission line per membrane region, in world coordinates. Fragments leave
+ * random points along a line half the cell's width long, all traveling the
+ * region's outward direction. Region geometry comes from the same placements
+ * that draw the membrane coat, so bend, taper, and crystal shapes all aim
+ * correctly. Each pilus on the region raises the firing rate.
+ */
+function secretedEmitters(): PilusEmitter[] {
+  const form = fillPlayerForm();
+  const crystal = membraneStyle === 3;
+  const body = cellDimensions(form.scale, form.elongation, form.girth, form.crescent);
+  const emitters: PilusEmitter[] = [];
+  const regions: { site: PilusSite; count: number; average: number; variance: number }[] = [];
+  if (genomeDrivesPilinState) {
+    for (const coat of genomeSecretedPilinCoats) {
+      regions.push({ site: coat.site, count: coat.count, average: coat.length, variance: PILIN_LENGTH_VARIANCE });
+    }
+  } else if (piliCount >= 1 && piliLength > 0.02) {
+    if (pilusSite === "all") {
+      // The coat splits an all-site count across the four regions; the mean
+      // anchors only need the same shares.
+      const base = Math.floor(piliCount / 4);
+      const extra = piliCount % 4;
+      for (const [index, site] of (["polar", "antipolar", "lateral", "antilateral"] as const).entries()) {
+        regions.push({ site, count: base + (index < extra ? 1 : 0), average: piliLength, variance: piliVariance });
+      }
+    } else {
+      regions.push({ site: pilusSite, count: piliCount, average: piliLength, variance: piliVariance });
+    }
+  }
+  const cos = Math.cos(pose.angle);
+  const sin = Math.sin(pose.angle);
+  for (const region of regions) {
+    if (region.count < 1) continue;
+    const placed = piliPlacements(
+      region.count,
+      region.average,
+      region.variance,
+      region.site,
+      body.length,
+      body.width,
+      body.bend,
+      crystal,
+      form.taper,
+    );
+    if (placed.length === 0) continue;
+    let centerX = 0;
+    let centerY = 0;
+    let normalX = 0;
+    let normalY = 0;
+    let totalLength = 0;
+    for (const pilus of placed) {
+      centerX += pilus.x;
+      centerY += pilus.y;
+      normalX += pilus.dirX;
+      normalY += pilus.dirY;
+      totalLength += pilus.length;
+    }
+    const scale = 1 / placed.length;
+    const norm = Math.hypot(normalX, normalY) || 1;
+    const dirX = (normalX / norm) * cos - (normalY / norm) * sin;
+    const dirY = (normalX / norm) * sin + (normalY / norm) * cos;
+    emitters.push({
+      x: pose.x + (centerX * scale) * cos - (centerY * scale) * sin,
+      y: pose.y + (centerX * scale) * sin + (centerY * scale) * cos,
+      dirX,
+      dirY,
+      // The emission line spans half the cell's width across the region.
+      span: body.width * 0.25,
+      length: totalLength * scale,
+      variance: region.variance,
+      shots: placed.length,
+    });
+  }
+  return emitters;
+}
+
+/**
+ * Whether the cell is firing secreted pilin. The genome's secreted coats
+ * decide once pilin is expressed; the sandbox mode button decides until then.
+ * An oscillating promoter at its trough expresses nothing, so the fire stops
+ * for that moment.
+ */
+function secretedPiliActive(): boolean {
+  return genomeDrivesPilinState ? genomeSecretedPilinCoats.length > 0 : pilusMode === "secreted";
+}
+
+/**
+ * Secreted pili: each covered membrane region fires bursts of fragments from
+ * a line across it, and every fragment kicks the cell back along the region's
+ * outward direction — so symmetric coats, like a bipolar spray, cancel their
+ * pushes and an unbalanced coat drives the cell away from the regions firing
+ * hardest.
+ * The newborn rest period holds the fire but lets fragments already in flight
+ * finish out, and so does a trough in an oscillating promoter. Recoil lands on
+ * swim momentum, so cruise drags it out like any other push.
+ */
+function stepSecretedPili(dt: number): void {
+  const active = secretedPiliActive();
+  // Fragments already in flight keep moving even while the fire is held.
+  if (!active && pilusEjection.fragments.length === 0) return;
+  const emitters = active && controlledMotilityRest <= 0 ? secretedEmitters() : [];
+  const stepped = stepPilusEjection(pilusEjection, emitters, dt);
+  pilusEjection = stepped.state;
+  swim.vx += stepped.recoilX;
+  swim.vy += stepped.recoilY;
+}
+
 function stepControlled(dt: number): void {
+  stepSecretedPili(dt);
   if (controlledMotilityRest > 0) {
     controlledMotilityRest = Math.max(0, controlledMotilityRest - dt);
     if (wasdEnabled) steerManual(dt);
@@ -2618,7 +3114,8 @@ function stepControlled(dt: number): void {
   }
 }
 
-/** World-up drift from the buoyin and ballastin sliders. Not swim momentum. */
+/** World-up drift target from the buoyin and ballastin sliders. The actual
+ * drift accelerates toward this target under hydrodynamic drag. */
 function buoyancyDrift(y: number, up = buoyin, down = ballastin): number {
   return buoyancyVelocity(y, up, down);
 }
@@ -2675,7 +3172,7 @@ function steerManual(dt: number): void {
   const width = cellWidth();
   const bend = cellBend();
   pose.length = cellLength();
-  const fitted = renderer.fitPose(previous, pose, width, bend, pilusProbes());
+  const fitted = renderer.fitPose(previous, pose, width, bend, membranePili() ? pilusProbes() : []);
   pose.x = fitted.x;
   pose.y = fitted.y;
   pose.angle = fitted.angle;
@@ -2703,6 +3200,7 @@ const driveScratch: CellDrive = {
   piliLength: 0,
   piliVariance: 0,
   pilusSite: "all",
+  piliCoats: null,
   undulation: 0,
   undulationBySite: null,
   pulse: 0,
@@ -2726,10 +3224,11 @@ function playerDrive(): CellDrive {
   driveScratch.ciliaSwitch = ciliaSwitch;
   driveScratch.ciliaReverse = ciliaReverse;
   driveScratch.ciliaMotor = genomeDrivesCiliaState ? genomeCiliaMotor : null;
-  driveScratch.piliCount = piliCount;
+  driveScratch.piliCount = membranePili() ? piliCount : 0;
   driveScratch.piliLength = piliLength;
-  driveScratch.piliVariance = piliVariance;
+  driveScratch.piliVariance = genomeDrivesPilinState ? PILIN_LENGTH_VARIANCE : piliVariance;
   driveScratch.pilusSite = pilusSite;
+  driveScratch.piliCoats = membranePili() && genomeDrivesPilinState ? genomePilinCoats : null;
   driveScratch.undulation = undulation;
   driveScratch.undulationBySite = undulationBySite;
   driveScratch.pulse = pulse;
@@ -2801,7 +3300,9 @@ function cruise(
       motion.vy -= next.driveY * (along + RELEASE_RECOIL);
     }
   }
-  const driftY = buoyancyDrift(bodyPose.y, drive.buoyin, drive.ballastin);
+  const buoyancyTarget = buoyancyDrift(bodyPose.y, drive.buoyin, drive.ballastin);
+  buoyancyDriftVelocity = stepBuoyancyVelocity(buoyancyDriftVelocity, buoyancyTarget, dt);
+  const driftY = buoyancyDriftVelocity;
   const stick = collide
     ? adhesinDrift(bodyPose.x, bodyPose.y, bodyPose.angle, body.length, body.width, body.bend, drive.adhesin)
     : { x: 0, y: 0 };
@@ -2817,7 +3318,7 @@ function cruise(
   }
   bodyPose.length = body.length;
   if (!collide) return;
-  const probes = pilusProbes(form, crystal, drive.piliCount, drive.piliLength, drive.piliVariance, drive.pilusSite);
+  const probes = pilusProbes(form, crystal, drive.piliCount, drive.piliLength, drive.piliVariance, drive.pilusSite, drive.piliCoats);
   const restoreSlide = terrainSlideKeep(lubricin);
   renderer.setTerrainSlide(terrainSlideKeep(drive.lubricin));
   try {
@@ -2900,12 +3401,13 @@ function siblingSnapshot(cell: SimulatedCell, now: number): CellSnapshot {
     ciliaSpeed: cell.motilityRest > 0 ? 0 : ciliaSpeed,
     ciliaSway: ciliaSway * cell.ciliaPresence,
     ciliaCover: cell.ciliaPresence,
-    ciliaOrder,
+    ciliaStill: ciliaCoatStill(),
+    ciliaOrder: ciliaCoatOrder() ? 0 : ciliaOrder,
     ciliaSwitch,
     ciliaReverse,
     flagella: flagellaFor(cell.id, cell.form),
     cilia: ciliaFor(cell.form, cell.membrane.style === 3),
-    pili: piliFor(cell.form, cell.membrane.style === 3),
+    pili: membranePili() ? piliFor(cell.form, cell.membrane.style === 3) : [],
     piliCover: cell.piliPresence,
     membranePx: cell.membrane.px,
     membraneStyle: cell.membrane.style,
@@ -3332,12 +3834,13 @@ function controlledCell(
     ciliaSpeed: controlledMotilityRest > 0 ? 0 : ciliaSpeed,
     ciliaSway: ciliaSway * controlledCiliaPresence,
     ciliaCover: controlledCiliaPresence,
-    ciliaOrder,
+    ciliaStill: ciliaCoatStill(),
+    ciliaOrder: ciliaCoatOrder() ? 0 : ciliaOrder,
     ciliaSwitch,
     ciliaReverse,
     flagella: flagellaFor(controlledId),
     cilia: ciliaFor(),
-    pili: piliFor(),
+    pili: membranePili() ? piliFor() : [],
     piliCover: controlledPiliPresence,
     taper: currentTaper(),
     pigment: pigmentTint(pigment),

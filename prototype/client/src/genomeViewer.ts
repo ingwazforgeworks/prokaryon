@@ -4,6 +4,7 @@ import {
   amountRange,
   applySnapshot,
   behaviorLine,
+  beginEditCassette,
   cassetteAtpCost,
   cassetteMutationCost,
   CYTOSOLIC_ICON,
@@ -18,6 +19,7 @@ import {
   tagById,
   type Cassette,
 } from "./genomeState";
+import { openDockWindow } from "./dock";
 import { playCue } from "./uiSound";
 
 const SHEET_URL = "/ui/genome_viewer/DNA_Pixel_Grooves_32_Frames_Long.png";
@@ -198,6 +200,20 @@ export function initGenomeViewer(): void {
     frame.append(protein);
     const bar = document.createElement("div");
     bar.className = "genome-detail-bar";
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "genome-mode-tab";
+    editButton.textContent = "Edit Gene";
+    editButton.title = "Load this construct into the gene editor";
+    editButton.addEventListener("pointerenter", () => playCue("hover"));
+    editButton.addEventListener("click", () => {
+      if (!beginEditCassette(cassette.uid)) {
+        playCue("deny");
+        return;
+      }
+      openDockWindow("gene-editor");
+      playCue("tab");
+    });
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "genome-mode-tab";
@@ -211,7 +227,7 @@ export function initGenomeViewer(): void {
       playCue("button");
       confirmCancel.focus();
     });
-    bar.append(deleteButton);
+    bar.append(editButton, deleteButton);
     const blocks: HTMLElement[] = [bar, frame, name, meta, copy];
 
     const behavior = document.createElement("p");

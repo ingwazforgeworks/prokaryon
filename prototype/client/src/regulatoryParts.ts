@@ -64,6 +64,17 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     row: 1,
   },
   {
+    id: "COSL",
+    code: "COSL",
+    category: "Promoter",
+    name: "Co-oscillatory",
+    description: "Sweeps smoothly between its minimum and maximum amounts on the same cycle as Oscillatory, but perfectly out of phase with it.",
+    icon: `${REGULATORY_ICON_DIR}/oscillatory_32x32.png`,
+    defaultUnlocked: false,
+    col: 2,
+    row: 2,
+  },
+  {
     id: "THRS",
     code: "THRS",
     category: "Promoter",
@@ -305,6 +316,7 @@ export const REGULATORY_EDGES: readonly RegulatoryEdge[] = [
   // Promoter
   { from: "CNST", to: "GRAD", kind: "unlocks" },
   { from: "CNST", to: "OSCL", kind: "unlocks" },
+  { from: "OSCL", to: "COSL", kind: "required" },
   { from: "GRAD", to: "THRS", kind: "unlocks" },
   { from: "OSCL", to: "COND", kind: "unlocks" },
   { from: "COND", to: "PERS", kind: "required" },

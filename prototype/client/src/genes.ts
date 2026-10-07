@@ -15,7 +15,7 @@ export const GENES: GeneRecord[] = [
   {
     "id": "ANAB",
     "name": "Anabolase",
-    "category": "Metabolism",
+    "category": "Reproduction",
     "description": "Assembles Biomass from carbon, nitrogen and energy. The gene that converts a well-fed cell into a larger cell, and therefore the gene that gates Division and the mutation-point income that follows from it."
   },
   {
@@ -349,6 +349,12 @@ export const GENES: GeneRecord[] = [
     "description": "Bends the cell's long axis into a crescent. The curve changes how the body meets a surface and how it moves through water, without changing how much cell there is."
   },
   {
+    "id": "CRYS",
+    "name": "Crystallin",
+    "category": "Morphology",
+    "description": "Secretes a protein that polymerises into a crystal lattice over the envelope. Any expression at all armours the cell in crystal, and the stronger the expression the thicker the lattice grows."
+  },
+  {
     "id": "EFFI",
     "name": "Effector Injector",
     "category": "Morphology",
@@ -379,6 +385,12 @@ export const GENES: GeneRecord[] = [
     "description": "Thickens the cell across its short axis, lowering the aspect ratio. The same volume becomes shorter and wider, so there is less surface per volume and a shorter lever arm for shear to break."
   },
   {
+    "id": "ISPR",
+    "name": "Isoprene Synthase",
+    "category": "Morphology",
+    "description": "Secretes the rubbery polymer that stiffens into an isoprene coat over the envelope. Any expression at all builds the coat, and the stronger the expression the thicker it grows."
+  },
+  {
     "id": "LYSS",
     "name": "Lysin Synthase",
     "category": "Morphology",
@@ -403,6 +415,12 @@ export const GENES: GeneRecord[] = [
     "description": "Sets the Biomass threshold at which the cell commits to Division. Small cells divide often and cheaply; large cells divide rarely and carry more reserves."
   },
   {
+    "id": "TPRN",
+    "name": "Taperin",
+    "category": "Morphology",
+    "description": "A cytosolic scaffold that narrows the cell exactly where it gathers. Tagged to a pole or a side it pinches that end alone; expressed without a position tag it thins the whole body at once."
+  },
+  {
     "id": "FLGM",
     "name": "Flagellar Motor Protein",
     "category": "Motility",
@@ -418,7 +436,7 @@ export const GENES: GeneRecord[] = [
     "id": "PILN",
     "name": "Pilin",
     "category": "Motility",
-    "description": "Builds retractable surface filaments that grip a substrate and pull. The cell crawls rather than swims: slow, short-ranged, and unbothered by current."
+    "description": "Builds protein filaments. Anchored in the membrane they stand as grippers that pull the cell along a substrate; secreted, they eject backwards and shove the cell by recoil."
   },
   {
     "id": "CILN",
@@ -532,7 +550,7 @@ export const GENES: GeneRecord[] = [
     "id": "CYCL",
     "name": "Cyclin",
     "category": "Reproduction",
-    "description": "Pushes the cell to divide while it is expressed. The commitment happens earlier than the size threshold would allow, and it happens only for as long as the gene is on."
+    "description": "Pushes the cell to divide while it is expressed, but only once it has grown to division size 1.0 — the smallest size that leaves both daughters above the 0.5 minimum, since a dividing cell halves. The push lasts only as long as the gene is on."
   },
   {
     "id": "PLSM",

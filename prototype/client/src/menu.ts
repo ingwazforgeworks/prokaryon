@@ -487,7 +487,7 @@ export function initTitleScreen(): void {
   });
   credits.addEventListener("click", () => {
     playCue("select");
-    showNote("Credits", "Gnome Boys Research Solutions");
+    showNote("Credits", "Ingwaz Forgeworks");
   });
   geneMakerButton.addEventListener("click", () => {
     playCue("select");

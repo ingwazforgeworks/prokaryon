@@ -1,12 +1,15 @@
 import {
   amountById,
   amountRange,
+  applySnapshot,
   autoIdentity,
   behaviorLine,
   clearDraft,
   clearPart,
+  draftMatchesEditing,
   draftProblems,
   dropTargets,
+  editingCassette,
   geneById,
   getDraft,
   getGenome,
@@ -17,8 +20,11 @@ import {
   regulatoryIcon,
   removeCassette,
   scalarResponse,
+  snapshot,
   geneAcceptsRoute,
   geneAcceptsSite,
+  geneAcceptsCytosolicSite,
+  illegalDraftSlots,
   setDraftCode,
   setDraftName,
   tagRole,
@@ -30,6 +36,7 @@ import {
   unlockedGenes,
   unlockedPromoters,
   unlockedTags,
+  updateEditedCassette,
   type CatalogPart,
   type Draft,
   type ScalarResponse,
@@ -93,7 +100,7 @@ export function initGenomeEditor(): void {
   auto.title = "Generate name and code from placed parts";
   auto.setAttribute("aria-label", "Auto-generate gene name and code");
   nameLabel.append(auto);
-  benchBar.append(nameLabel, clear);
+  benchBar.append(nameLabel);
   const codeInput = document.createElement("input");
   codeInput.className = "editor-code";
   codeInput.maxLength = 5;
@@ -117,7 +124,7 @@ export function initGenomeEditor(): void {
   resetView.textContent = "◎";
   resetView.title = "Reset view";
   resetView.setAttribute("aria-label", "Reset view");
-  stage.append(stageWorld, resetView);
+  stage.append(stageWorld, clear, resetView);
   bench.append(identity, stage);
 
   const tray = document.createElement("section");
@@ -205,7 +212,13 @@ export function initGenomeEditor(): void {
   add.type = "button";
   add.className = "editor-add";
   add.textContent = "Add to genome";
-  actions.append(add);
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.className = "editor-add editor-edit";
+  edit.textContent = "Edit Gene";
+  edit.title = "Replace the construct being edited with this version";
+  edit.hidden = true;
+  actions.append(add, edit);
   constructPane.append(constructLabel, inspect, response, problems, statusLine, actions);
   const selectionPane = document.createElement("section");
   selectionPane.className = "editor-pane editor-selection";
@@ -257,6 +270,9 @@ export function initGenomeEditor(): void {
   add.addEventListener("click", () => {
     void addToGenome();
   });
+  edit.addEventListener("click", () => {
+    void editGenome();
+  });
   host.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
   });
@@ -300,7 +316,7 @@ export function initGenomeEditor(): void {
 
   stage.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
-    if (event.target instanceof Element && event.target.closest(".editor-stage-reset")) return;
+    if (event.target instanceof Element && event.target.closest(".editor-stage-reset, .editor-clear")) return;
     panMoved = false;
     panDrag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: panX, originY: panY, moved: false };
   });
@@ -383,6 +399,7 @@ export function initGenomeEditor(): void {
   function renderTrack(): void {
     const value = getDraft();
     const range = amountRange(value.promoterId);
+    const illegal = new Set(illegalDraftSlots(value));
     track.replaceChildren(
       partModule("promoter", "Promoter", value.promoterId),
       joint("editor-joint-a"),
@@ -392,9 +409,9 @@ export function initGenomeEditor(): void {
       joint("editor-joint-b"),
       partModule("coding", "Coding region", value.geneId),
       joint("editor-joint-c"),
-      tagModule("route", "Destination", value.routeId, false),
+      tagModule("route", "Destination", value.routeId, false, illegal.has("route")),
       joint("editor-joint-d"),
-      tagModule("site", "Position", value.siteId, value.routeId === "CYTO" || !geneAcceptsSite(value.geneId)),
+      tagModule("site", "Position", value.siteId, (value.routeId === "CYTO" && !geneAcceptsCytosolicSite(value.geneId)) || !geneAcceptsSite(value.geneId), illegal.has("site")),
     );
     behavior.textContent = behaviorLine(value);
   }
@@ -423,15 +440,16 @@ export function initGenomeEditor(): void {
     return slotFrame(slot, label, record?.name ?? null, icon);
   }
 
-  function tagModule(slot: "route" | "site", label: string, id: string | null, locked: boolean): HTMLElement {
+  function tagModule(slot: "route" | "site", label: string, id: string | null, locked: boolean, illegal = false): HTMLElement {
     const tag = id ? tagById(id) : undefined;
-    return slotFrame(slot, label, tag?.name ?? null, id ? regulatoryIcon(id) : null, locked);
+    return slotFrame(slot, label, tag?.name ?? null, id ? regulatoryIcon(id) : null, locked, illegal);
   }
 
-  function slotFrame(slot: Slot, label: string, installed: string | null, iconUrl: string | null = null, locked = false): HTMLElement {
+  function slotFrame(slot: Slot, label: string, installed: string | null, iconUrl: string | null = null, locked = false, illegal = false): HTMLElement {
     const frame = document.createElement("button");
     frame.type = "button";
-    frame.className = `editor-slot editor-${slot}${installed ? "" : " is-empty"}${selectedSlot === slot ? " is-selected" : ""}${locked ? " is-locked" : ""}`;
+    frame.className = `editor-slot editor-${slot}${installed ? "" : " is-empty"}${selectedSlot === slot ? " is-selected" : ""}${locked ? " is-locked" : ""}${illegal ? " is-illegal" : ""}`;
+    if (illegal) frame.title = `${installed ?? label} is not available for this protein`;
     frame.dataset.slot = slot;
     frame.setAttribute("aria-label", installed ? `${label}: ${installed}` : `Empty ${label}`);
     const kind = document.createElement("span");
@@ -443,7 +461,7 @@ export function initGenomeEditor(): void {
       const name = document.createElement("span");
       name.className = "editor-slot-name";
       name.textContent = installed;
-      name.title = installed;
+      name.title = illegal ? frame.title : installed;
       frame.append(name);
     }
     if (installed) {
@@ -594,8 +612,14 @@ export function initGenomeEditor(): void {
   function renderActions(): void {
     const reasons = draftProblems();
     problems.textContent = reasons.join(" ");
-    problems.hidden = reasons.length === 0;
+    problems.hidden = reasons.length > 0;
     add.disabled = busy || reasons.length > 0;
+    const editing = editingCassette();
+    edit.hidden = editing === null;
+    edit.disabled = busy || reasons.length > 0 || draftMatchesEditing();
+    edit.title = editing
+      ? `Replace ${editing.name} in the genome with this version`
+      : "Replace the construct being edited with this version";
     statusLine.textContent = status;
     statusLine.hidden = status.length === 0;
   }
@@ -763,6 +787,52 @@ export function initGenomeEditor(): void {
       playCue("alarm");
     } else {
       status = `Added ${result.cassette.name} to the genome.`;
+      playCue("success");
+    }
+    busy = false;
+    render();
+  }
+
+  async function editGenome(): Promise<void> {
+    if (busy) return;
+    if (!editingCassette()) {
+      status = "The construct being edited is no longer in the genome.";
+      render();
+      playCue("deny");
+      return;
+    }
+    const reasons = draftProblems();
+    if (reasons.length > 0) {
+      status = reasons.join(" ");
+      render();
+      playCue("deny");
+      return;
+    }
+    if (draftMatchesEditing()) {
+      status = "The construct is unchanged from its existing form.";
+      render();
+      playCue("deny");
+      return;
+    }
+    playCue("button");
+    busy = true;
+    renderActions();
+    const restore = snapshot();
+    const result = updateEditedCassette();
+    if ("problems" in result) {
+      busy = false;
+      status = result.problems.join(" ");
+      render();
+      playCue("deny");
+      return;
+    }
+    const saved = await persistGenome();
+    if (!saved) {
+      applySnapshot(restore);
+      status = "Genome was not changed. The save failed.";
+      playCue("alarm");
+    } else {
+      status = `Replaced ${result.cassette.name} in the genome.`;
       playCue("success");
     }
     busy = false;

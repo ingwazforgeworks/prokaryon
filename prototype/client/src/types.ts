@@ -36,6 +36,20 @@ export interface PilusSnapshot {
 }
 
 /**
+ * A pilus fragment shed from a secreted pilus, in world coordinates. Launched
+ * off the membrane region, decelerating like a bullet in water, fading out.
+ */
+export interface PilusFragmentSnapshot {
+  x: number;
+  y: number;
+  dirX: number;
+  dirY: number;
+  length: number;
+  /** 1 is fully opaque. 0 has faded out entirely. */
+  alpha: number;
+}
+
+/**
  * Which sides taper, and how hard each one pinches.
  * `mask` bits: polar 1, antipolar 2, lateral 4, antilateral 8.
  * Each degree is 0–1. 0 leaves that side full. 1 keeps half the radius.
@@ -93,6 +107,8 @@ export interface CellSnapshot {
   ciliaReverse: boolean;
   /** 0 shed, 1 a full coat. Omitted cells draw the full coat. */
   ciliaCover?: number;
+  /** True when the coat holds still: the cilia grow but no motor rows them. Omitted cells beat. */
+  ciliaStill?: boolean;
   /** 0 shed, 1 a full coat of pili. Omitted cells draw every pilus opaque. */
   piliCover?: number;
   flagella: FlagellumSnapshot[];

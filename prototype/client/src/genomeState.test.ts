@@ -2,12 +2,16 @@ import {
   amountRange,
   applySnapshot,
   behaviorLine,
+  beginEditCassette,
   cassetteAtpCost,
   cassetteMutationCost,
   parseSnapshot,
   clearDraft,
   clearPart,
+  draftMatchesEditing,
   draftProblems,
+  editingCassette,
+  illegalDraftSlots,
   geneAcceptsRoute,
   geneAcceptsSite,
   getDraft,
@@ -23,10 +27,12 @@ import {
   setDraftName,
   setInsertionIndex,
   slotAccepts,
+  snapshot,
   unlockedGenes,
   unlockedPromoters,
   unlockedAmounts,
   unlockedTags,
+  updateEditedCassette,
   regulatoryIcon,
   CYTOSOLIC_ICON,
   type Cassette,
@@ -34,6 +40,7 @@ import {
 } from "./genomeState";
 import { resetUnlocks, unlockGene, unlockPart, unlockedGeneIds } from "./geneUnlocks";
 import { mutationPointCount, setMutationPoints, STARTING_MUTATION_POINTS } from "./resources";
+import { applyRequirementEdges, type TechEdge } from "./techTree";
 
 let failed = 0;
 
@@ -60,6 +67,7 @@ check(unlockedTags().some((part) => part.id === "CYTO" && part.kind === "tag"), 
 check(regulatoryIcon("CNST")?.endsWith("constitutive_32x32.png") === true, "constitutive icon");
 check(regulatoryIcon("GRAD")?.endsWith("graded_32x32.png") === true, "graded icon");
 check(regulatoryIcon("OSCL")?.endsWith("oscillatory_32x32.png") === true, "oscillatory icon");
+check(regulatoryIcon("COSL")?.endsWith("oscillatory_32x32.png") === true, "co-oscillatory reuses the oscillatory icon");
 check(regulatoryIcon("PERS")?.endsWith("persistence_gated_32x32.png") === true, "persistence gated icon");
 check(regulatoryIcon("SURF")?.endsWith("membrane_anchored_32x32.png") === true, "membrane anchored icon");
 check(regulatoryIcon("THRS")?.endsWith("threshold_32x32.png") === true, "threshold icon");
@@ -85,7 +93,7 @@ check(!slotAccepts("route", "CNST"), "a promoter is not a destination tag");
 check(!slotAccepts("site", "SecretoryPeptide"), "a destination tag is not a position");
 check(!slotAccepts("amount", "CNST"), "a promoter is not an amount part");
 check(!slotAccepts("amount", "AZOH"), "a gene is not an amount part");
-check(amountRange("OSCL") && amountRange("GRAD"), "oscillatory and graded promoters split the amount node");
+check(amountRange("OSCL") && amountRange("COSL") && amountRange("GRAD"), "oscillatory, co-oscillatory, and graded promoters split the amount node");
 check(!amountRange("CNST") && !amountRange("COND") && !amountRange("PERS") && !amountRange("THRS"), "other promoters keep a single amount node");
 check(!slotAccepts("amount-min", "CNST") && !slotAccepts("amount-max", "AZOH"), "the split amount slots reject non-amount parts");
 
@@ -96,6 +104,19 @@ check(geneAcceptsRoute("FERR", "CYTO") && !geneAcceptsRoute("FERR", "Transmembra
 check(geneAcceptsRoute("SLFR", "CYTO") && !geneAcceptsRoute("SLFR", "TransmembraneSignal") && !geneAcceptsRoute("SLFR", "SecretoryPeptide"), "the sulfex reductase only takes the cytosol destination");
 check(!geneAcceptsSite("FERR") && !geneAcceptsSite("SLFR"), "the reductases refuse position tags");
 check(geneAcceptsSite(null) && geneAcceptsSite("FLGN") && !geneAcceptsSite("FERP") && !geneAcceptsSite("SLFP"), "only the permeases refuse position tags");
+// Anabolase and cyclin are soluble cytosolic modules with no position tag.
+check(geneAcceptsRoute("ANAB", "CYTO") && !geneAcceptsRoute("ANAB", "TransmembraneSignal") && !geneAcceptsRoute("ANAB", "SecretoryPeptide"), "anabolase only takes the cytosol destination");
+check(geneAcceptsRoute("CYCL", "CYTO") && !geneAcceptsRoute("CYCL", "SecretoryPeptide") && !geneAcceptsRoute("CYCL", "TransmembraneSignal"), "cyclin only takes the cytosol destination");
+check(!geneAcceptsSite("ANAB") && !geneAcceptsSite("CYCL"), "anabolase and cyclin refuse position tags");
+// ATP synthase works from the membrane: transmembrane only, no position tag.
+check(geneAcceptsRoute("ATPS", "TransmembraneSignal") && !geneAcceptsRoute("ATPS", "CYTO") && !geneAcceptsRoute("ATPS", "SecretoryPeptide") && !geneAcceptsRoute("ATPS", "SURF"), "ATP synthase only takes the transmembrane route");
+check(!geneAcceptsSite("ATPS"), "ATP synthase refuses position tags");
+// Adhesin embeds in the membrane: transmembrane only, no position tag.
+check(geneAcceptsRoute("ADHN", "TransmembraneSignal") && !geneAcceptsRoute("ADHN", "SURF") && !geneAcceptsRoute("ADHN", "SecretoryPeptide"), "adhesin only takes the transmembrane route");
+check(!geneAcceptsSite("ADHN"), "adhesin refuses position tags");
+// Cohesin works at range or anchored: secreted or membrane anchored, no position tag.
+check(geneAcceptsRoute("COHS", "SecretoryPeptide") && geneAcceptsRoute("COHS", "SURF") && !geneAcceptsRoute("COHS", "CYTO") && !geneAcceptsRoute("COHS", "TransmembraneSignal"), "cohesin takes the secreted or membrane-anchored destinations");
+check(!geneAcceptsSite("COHS"), "cohesin refuses position tags");
 check(placePart("coding", "FERP"), "the permease places as a coding region");
 check(placePart("route", "TransmembraneSignal"), "the permease takes the transmembrane destination");
 check(!placePart("route", "SecretoryPeptide") && !placePart("route", "CYTO"), "the permease rejects the other destinations");
@@ -142,6 +163,11 @@ check(placePart("route", "SecretoryPeptide"), "lubricin takes the secreted desti
 check(!placePart("route", "CYTO") && !placePart("route", "TransmembraneSignal") && !placePart("route", "SURF"), "lubricin rejects the other destinations");
 check(!placePart("site", "PolarLocalizationSignal"), "lubricin rejects every position tag");
 const lubricinDraft: Draft = { name: "Probe", code: "PRB4", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "LUBR", routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" };
+check(illegalDraftSlots(lubricinDraft).join(",") === "route,site", "a coding-region change that leaves a rejected destination and position marks both nodes");
+check(illegalDraftSlots({ ...lubricinDraft, routeId: "SecretoryPeptide", siteId: null }).length === 0, "a secreted lubricin with no position tag marks no node");
+check(illegalDraftSlots({ ...lubricinDraft, geneId: "FLGN", routeId: "SecretoryPeptide", siteId: "PolarLocalizationSignal" }).length === 0, "flagellin keeps a secreted polar tag unmarked");
+check(illegalDraftSlots({ ...lubricinDraft, geneId: "BUOY", routeId: "CYTO", siteId: "PolarLocalizationSignal" }).join(",") === "site", "a position tag beside a cytosolic destination marks the position node");
+check(illegalDraftSlots({ ...lubricinDraft, geneId: null, routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" }).length === 0, "no coding region leaves installed tags unmarked");
 check(draftProblems(lubricinDraft).some((problem) => problem.includes("only takes the Secreted")), "a misrouted lubricin draft names the accepted destination");
 check(draftProblems(lubricinDraft).some((problem) => problem.includes("cannot take a position tag")), "a position tag on the lubricin draft is flagged");
 clearPart("coding");
@@ -162,6 +188,8 @@ clearPart("route");
 
 // The ciliary motor protein sits in the membrane and takes any position tag.
 check(geneAcceptsRoute("CILM", "TransmembraneSignal") && !geneAcceptsRoute("CILM", "SecretoryPeptide") && !geneAcceptsRoute("CILM", "CYTO"), "the ciliary motor protein only takes the transmembrane route");
+check(geneAcceptsRoute("PILN", "TransmembraneSignal") && geneAcceptsRoute("PILN", "SecretoryPeptide") && !geneAcceptsRoute("PILN", "CYTO") && !geneAcceptsRoute("PILN", "SURF"), "pilin takes the transmembrane or secreted route");
+check(geneAcceptsSite("PILN"), "pilin accepts a position tag");
 check(geneAcceptsSite("CILM"), "the ciliary motor protein accepts position tags");
 check(placePart("coding", "CILM"), "the ciliary motor protein places as a coding region");
 check(placePart("route", "TransmembraneSignal"), "the ciliary motor protein takes the transmembrane destination");
@@ -184,9 +212,9 @@ check(placePart("promoter", "AZOH") === false, "invalid drop is rejected");
 check(JSON.stringify(getDraft()) === before, "invalid drop leaves the construct unchanged");
 
 check(placePart("promoter", "CNST"), "promoter places");
-check(placePart("coding", "AZOH"), "coding region places");
-check(placePart("coding", "ATPS"), "occupied coding region is replaced");
-check(getDraft().geneId === "ATPS", "replacement keeps the new gene");
+check(placePart("coding", "ATPS"), "coding region places");
+check(placePart("coding", "AZOH"), "occupied coding region is replaced");
+check(getDraft().geneId === "AZOH", "replacement keeps the new gene");
 check(placePart("site", "PolarLocalizationSignal"), "position tag places");
 clearPart("site");
 check(getDraft().siteId === null, "removed position tag is gone");
@@ -197,11 +225,11 @@ check(placePart("route", "CYTO"), "cytosolic tag places");
 check(getDraft().routeId === "CYTO" && getDraft().siteId === null, "cytosolic clears the position tag");
 check(placePart("site", "LATR") === false, "cytosolic cannot take a second tag");
 clearPart("route");
-check(getDraft().promoterId === "CNST" && getDraft().geneId === "ATPS", "removing a tag keeps the other parts");
+check(getDraft().promoterId === "CNST" && getDraft().geneId === "AZOH", "removing a tag keeps the other parts");
 
 setDraftName("Nitrox scavenger");
 check(getDraft().name === "Nitrox scavenger", "construct name is shared state");
-check(behaviorLine().includes("ATP Synthase"), "behavior summary follows the coding region");
+check(behaviorLine().includes("Azoite Hydrolase"), "behavior summary follows the coding region");
 setDraftCode("ntr1!");
 check(getDraft().code === "NTR1", "gene code is uppercase letters and numbers");
 setDraftCode("AB");
@@ -264,6 +292,7 @@ check(placePart("amount-min", "LOW") === false, "the split amount slots stay ina
 clearPart("amount");
 check(getDraft().amountId === null, "a removed amount part is gone");
 check(placePart("promoter", "OSCL"), "an oscillatory promoter places");
+check(placePart("promoter", "COSL"), "a co-oscillatory promoter places and also splits the amount node");
 check(placePart("amount", "MED") === false, "the single amount slot is inactive under a ranged promoter");
 check(placePart("amount-min", "LOW") && placePart("amount-max", "HYPER"), "min and max amount parts place under a ranged promoter");
 check(getDraft().amountMinId === "LOW" && getDraft().amountMaxId === "HYPER", "the split slots hold the placed parts");
@@ -305,12 +334,64 @@ check(
   "a single-mode snapshot drops the min and max amounts",
 );
 
+// Editing a committed construct: load it onto the bench, change it, replace it in place.
+applySnapshot({
+  v: 1,
+  draft: { name: "Bench", code: "BEN1", promoterId: "CNST", amountId: null, amountMinId: null, amountMaxId: null, geneId: "AZOH", routeId: null, siteId: null },
+  genome: [
+    { uid: "edit-a", name: "Scavenger A", code: "SCA1", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "AZOH", routeId: null, siteId: null },
+    { uid: "edit-b", name: "Scavenger B", code: "SCB1", promoterId: "COND", amountId: "LOW", amountMinId: null, amountMaxId: null, geneId: "OXDR", routeId: null, siteId: null },
+  ],
+});
+check(editingCassette() === null, "no construct is being edited before an edit begins");
+check(beginEditCassette("edit-b"), "edit loads a committed construct");
+check(getDraft().name === "Scavenger B" && getDraft().promoterId === "COND" && getDraft().geneId === "OXDR" && getDraft().amountId === "LOW", "the bench carries the edited construct's parts");
+check(editingCassette()?.uid === "edit-b", "the edited construct is tracked");
+check(draftMatchesEditing(), "a freshly loaded edit still matches its construct");
+setDraftName("Scavenger B Prime");
+check(!draftMatchesEditing(), "a changed draft no longer matches its construct");
+const updated = updateEditedCassette();
+check(!("problems" in updated), "a changed edit replaces its construct");
+if (!("problems" in updated)) {
+  check(updated.cassette.uid === "edit-b" && updated.cassette.name === "Scavenger B Prime" && updated.index === 1, "the replacement keeps the slot identity and position");
+  check(getGenome()[1]?.name === "Scavenger B Prime" && getGenome().length === 2, "the edited construct is replaced in place");
+}
+check(editingCassette() === null, "the edit session ends after a replacement");
+check(beginEditCassette("edit-a"), "a second edit loads the other construct");
+clearDraft();
+check(editingCassette() === null, "clearing the bench ends the edit session");
+check(beginEditCassette("edit-a") && removeCassette("edit-a"), "the edited construct can still be deleted");
+check(editingCassette() === null, "deleting the edited construct ends the edit session");
+check(getGenome().length === 1 && getGenome()[0]?.uid === "edit-b", "removal only deletes the edited construct");
+check(beginEditCassette("edit-b"), "an edit resumes after a removal");
+applySnapshot(snapshot());
+check(editingCassette()?.uid === "edit-b" && draftMatchesEditing(), "an edit session survives a snapshot round-trip");
+check(!beginEditCassette("missing"), "an unknown construct cannot be edited");
+
+setMutationPoints(STARTING_MUTATION_POINTS);
 check(unlockGene("FLGN"), "a mutation point unlocks a gene");
 check(mutationPointCount() === STARTING_MUTATION_POINTS - 1, "unlocking spends a mutation point");
 resetUnlocks();
 check(unlockedGeneIds().length === 0, "a new cell starts with no purchased gene unlocks (defaults are not purchases)");
 resetGenomeState();
 check(getGenome().length === 0 && getDraft().geneId === null, "a new cell starts with an empty genome and draft");
+
+// Motility genes gate on flagellin being unlocked, never on it being in the genome.
+setMutationPoints(10);
+const motilityEdges: TechEdge[] = [
+  { from: "FLGN", to: "CILN", kind: "required" },
+  { from: "FLGN", to: "CILM", kind: "required" },
+  { from: "FLGN", to: "PILN", kind: "required" },
+];
+applyRequirementEdges(motilityEdges);
+const cilinOnlyDraft: Draft = { name: "Probe", code: "PRB7", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "CILN", routeId: "SecretoryPeptide", siteId: null };
+check(draftProblems(cilinOnlyDraft).some((problem) => problem.includes("Requires Flagellin")), "a locked flagellin gates cilin");
+check(!unlockedGenes().some((part) => part.id === "CILN"), "the palette hides cilin while flagellin is locked");
+check(unlockGene("FLGN"), "flagellin unlocks after a reset");
+check(unlockGene("CILN") && unlockGene("CILM") && unlockGene("PILN"), "the motility genes unlock once flagellin is unlocked");
+check(getGenome().length === 0, "unlocking the motility genes never touches the genome");
+check(draftProblems(cilinOnlyDraft).length === 0, "an unlocked flagellin fully clears the cilin gate");
+check(unlockedGenes().some((part) => part.id === "PILN"), "the palette lists pilin once flagellin is unlocked");
 
 const hyperCassette: Cassette = {
   uid: "cost-hyper",

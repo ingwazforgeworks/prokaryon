@@ -9,6 +9,7 @@ const NAME_LIMIT = 48;
 const REGULATORY_ICONS: Record<string, string> = {
   CNST: `${REGULATORY_ICON_DIR}/constitutive_32x32.png`,
   COND: `${REGULATORY_ICON_DIR}/conditional_32x32.png`,
+  COSL: `${REGULATORY_ICON_DIR}/oscillatory_32x32.png`,
   GRAD: `${REGULATORY_ICON_DIR}/graded_32x32.png`,
   OSCL: `${REGULATORY_ICON_DIR}/oscillatory_32x32.png`,
   PERS: `${REGULATORY_ICON_DIR}/persistence_gated_32x32.png`,
@@ -152,6 +153,14 @@ const PROMOTERS: PromoterRecord[] = [
     amountMode: "range",
   },
   {
+    id: "COSL",
+    name: "Co-oscillatory",
+    summary: "Cycles opposite Oscillatory",
+    description: "Expression sweeps between the minimum and maximum amounts on the same cycle as the oscillatory promoter, but perfectly out of phase: it rests at its maximum while oscillatory sits at its trough.",
+    activation: "Cycles opposite the oscillatory clock",
+    amountMode: "range",
+  },
+  {
     id: "THRS",
     name: "Threshold",
     summary: "On past a level",
@@ -292,7 +301,8 @@ const tagsById = new Map(TAGS.map((tag) => [tag.id, tag]));
 
 const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: string | null }> = {
   GFP: { routeId: "CYTO", siteId: null },
-  ANAB: { routeId: "SecretoryPeptide", siteId: null },
+  ANAB: { routeId: "CYTO", siteId: null },
+  CYCL: { routeId: "CYTO", siteId: null },
   GLYP: { routeId: "SecretoryPeptide", siteId: "PolarLocalizationSignal" },
   NITP: { routeId: "SecretoryPeptide", siteId: "AntiPolarLocalizationSignal" },
   OXDP: { routeId: "SecretoryPeptide", siteId: "BIPO" },
@@ -300,7 +310,7 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
   SLFP: { routeId: "TransmembraneSignal", siteId: null },
   CBXP: { routeId: "SecretoryPeptide", siteId: "BILT" },
   ATPS: { routeId: "TransmembraneSignal", siteId: null },
-  ADHN: { routeId: "SURF", siteId: null },
+  ADHN: { routeId: "TransmembraneSignal", siteId: null },
   AQUP: { routeId: "SURF", siteId: "PolarLocalizationSignal" },
   PPMP: { routeId: "SURF", siteId: "AntiPolarLocalizationSignal" },
   PHOR: { routeId: "SURF", siteId: "BIPO" },
@@ -309,7 +319,7 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
   BFP: { routeId: "SURF", siteId: "BILT" },
   FLGN: { routeId: null, siteId: "PolarLocalizationSignal" },
   FLGM: { routeId: "TransmembraneSignal", siteId: null },
-  PILN: { routeId: null, siteId: "AntiPolarLocalizationSignal" },
+  PILN: { routeId: "TransmembraneSignal", siteId: "AntiPolarLocalizationSignal" },
   CHMR: { routeId: null, siteId: "BIPO" },
   CHLS: { routeId: null, siteId: "LATR" },
   FERP: { routeId: "TransmembraneSignal", siteId: null },
@@ -319,6 +329,12 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
   BALA: { routeId: "CYTO", siteId: null },
   LUBR: { routeId: "SecretoryPeptide", siteId: null },
   CILN: { routeId: "SecretoryPeptide", siteId: null },
+  ELGN: { routeId: "CYTO", siteId: null },
+  GRTN: { routeId: "CYTO", siteId: null },
+  CRST: { routeId: "CYTO", siteId: null },
+  CRYS: { routeId: "SecretoryPeptide", siteId: null },
+  ISPR: { routeId: "SecretoryPeptide", siteId: null },
+  TPRN: { routeId: "CYTO", siteId: "PolarLocalizationSignal" },
   CILM: { routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" },
   FRMP: { routeId: null, siteId: "BILT" },
 };
@@ -326,6 +342,7 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
 let draft: Draft = emptyDraft();
 let genome: Cassette[] = [];
 let insertion = 0;
+let editingUid: string | null = null;
 let catalogPopulated = false;
 const draftListeners = new Set<() => void>();
 const genomeListeners = new Set<(notice: GenomeNotice) => void>();
@@ -384,6 +401,11 @@ export function tagRole(id: string): TagRole | null {
 
 /** Genes whose protein only works through one specific destination route. */
 const GENE_ROUTES: Record<string, string[]> = {
+  ANAB: ["CYTO"],
+  CYCL: ["CYTO"],
+  ATPS: ["TransmembraneSignal"],
+  ADHN: ["TransmembraneSignal"],
+  COHS: ["SecretoryPeptide", "SURF"],
   FLGN: ["SecretoryPeptide"],
   FLGM: ["TransmembraneSignal"],
   FERP: ["TransmembraneSignal"],
@@ -392,13 +414,25 @@ const GENE_ROUTES: Record<string, string[]> = {
   SLFR: ["CYTO"],
   BUOY: ["CYTO"],
   BALA: ["CYTO"],
+  ELGN: ["CYTO"],
+  GRTN: ["CYTO"],
+  CRST: ["CYTO"],
+  TPRN: ["CYTO"],
   CILN: ["SecretoryPeptide"],
   LUBR: ["SecretoryPeptide"],
+  CRYS: ["SecretoryPeptide"],
+  ISPR: ["SecretoryPeptide"],
   CILM: ["TransmembraneSignal"],
+  PILN: ["TransmembraneSignal", "SecretoryPeptide"],
 };
 
 /** Genes that cannot carry a position tag. Genes left out take any position. */
 const GENE_SITES: Record<string, string[]> = {
+  ANAB: [],
+  CYCL: [],
+  ATPS: [],
+  ADHN: [],
+  COHS: [],
   FERP: [],
   SLFP: [],
   FERR: [],
@@ -407,7 +441,25 @@ const GENE_SITES: Record<string, string[]> = {
   BALA: [],
   CILN: [],
   LUBR: [],
+  ELGN: [],
+  GRTN: [],
+  CRST: [],
+  CRYS: [],
+  ISPR: [],
 };
+
+/**
+ * Genes whose cytosolic copies may still carry a position tag. Taperin shapes
+ * the cell where it gathers, so its mandatory cytosolic route is the one route
+ * allowed to pair with a position tag; for every other gene the cytosol tag
+ * still means "nowhere in particular".
+ */
+const CYTOSOLIC_SITE_GENES: ReadonlySet<string> = new Set(["TPRN"]);
+
+/** Whether a gene's cytosolic copies accept a position tag. */
+export function geneAcceptsCytosolicSite(geneId: string | null): boolean {
+  return geneId !== null && CYTOSOLIC_SITE_GENES.has(geneId);
+}
 
 /**
  * Whether a gene accepts a destination route. Genes without a restriction take
@@ -441,7 +493,7 @@ export function dropTargets(id: string): Slot[] {
   if (kind === "gene") return ["coding"];
   const role = tagRole(id);
   if (role === "route") return geneAcceptsRoute(draft.geneId, id) ? ["route"] : [];
-  if (role === "site" && draft.routeId !== "CYTO" && geneAcceptsSite(draft.geneId)) return ["site"];
+  if (role === "site" && (draft.routeId !== "CYTO" || geneAcceptsCytosolicSite(draft.geneId)) && geneAcceptsSite(draft.geneId)) return ["site"];
   return [];
 }
 
@@ -479,13 +531,12 @@ export function setCatalogGenesPopulated(on: boolean): void {
 }
 
 export function unlockedGenes(): CatalogPart[] {
-  const present = genomeGeneIds();
   if (!catalogPopulated) {
     const made = new Set(genome.map((cassette) => cassette.geneId));
     for (const gene of GENES) if (isGeneUnlocked(gene.id)) made.add(gene.id);
     return GENES.filter((gene) => made.has(gene.id)).map(genePart);
   }
-  return GENES.filter((gene) => missingGeneRequirements(gene.id, present).length === 0).map(genePart);
+  return GENES.filter((gene) => missingGeneRequirements(gene.id).length === 0).map(genePart);
 }
 
 export function unlockedTags(role?: TagRole): CatalogPart[] {
@@ -515,8 +566,8 @@ export function behaviorLine(value: Draft = draft): string {
 
 // Placeholder costs in tenths, until the simulation reports real economy values.
 const AMOUNT_ATP_TENTHS: readonly number[] = [2, 5, 10, 20, 40, 80];
-const PROMOTER_ATP_TENTHS: Record<string, number> = { CNST: 0, COND: 1, GRAD: 2, OSCL: 1, THRS: 2 };
-const PROMOTER_MP: Record<string, number> = { CNST: 1, COND: 2, GRAD: 3, OSCL: 3, THRS: 2 };
+const PROMOTER_ATP_TENTHS: Record<string, number> = { CNST: 0, COND: 1, COSL: 1, GRAD: 2, OSCL: 1, THRS: 2 };
+const PROMOTER_MP: Record<string, number> = { CNST: 1, COND: 2, COSL: 3, GRAD: 3, OSCL: 3, THRS: 2 };
 const TAG_ATP_TENTHS = 5;
 const CODING_MP = 2;
 const DEFAULT_AMOUNT_LEVEL = 3;
@@ -551,7 +602,18 @@ function cassetteAmountLevel(cassette: Cassette): number {
   return cassette.amountId ? amountsById.get(cassette.amountId)?.level ?? DEFAULT_AMOUNT_LEVEL : DEFAULT_AMOUNT_LEVEL;
 }
 
-export function draftProblems(value: Draft = draft, present: ReadonlySet<string> = genomeGeneIds()): string[] {
+/**
+ * Construct nodes holding a part the current coding region does not accept.
+ * An empty node is not listed. The outline is for a tag that is already installed.
+ */
+export function illegalDraftSlots(value: Draft = draft): Slot[] {
+  const slots: Slot[] = [];
+  if (value.routeId && !geneAcceptsRoute(value.geneId, value.routeId)) slots.push("route");
+  if (value.siteId && ((value.routeId === "CYTO" && !geneAcceptsCytosolicSite(value.geneId)) || tagRole(value.siteId) !== "site" || !geneAcceptsSite(value.geneId))) slots.push("site");
+  return slots;
+}
+
+export function draftProblems(value: Draft = draft): string[] {
   const problems: string[] = [];
   if (value.name.trim().length === 0) problems.push("Name the construct.");
   if (!/^[A-Z0-9]{3,5}$/.test(value.code)) problems.push("Gene code must be 3 to 5 letters or numbers.");
@@ -559,7 +621,7 @@ export function draftProblems(value: Draft = draft, present: ReadonlySet<string>
   else if (!promotersById.has(value.promoterId)) problems.push("Promoter is not in the catalog.");
   if (!value.geneId) problems.push("Add a coding region.");
   else if (!genesById.has(value.geneId)) problems.push("Coding region is not in the catalog.");
-  else problems.push(...missingGeneRequirements(value.geneId, present));
+  else problems.push(...missingGeneRequirements(value.geneId));
   if (amountRange(value.promoterId)) {
     if (value.amountMinId && partKind(value.amountMinId) !== "amount") problems.push("Minimum amount part is not in the catalog.");
     if (value.amountMaxId && partKind(value.amountMaxId) !== "amount") problems.push("Maximum amount part is not in the catalog.");
@@ -575,7 +637,7 @@ export function draftProblems(value: Draft = draft, present: ReadonlySet<string>
       .join(" or ");
     problems.push(`${gene?.name ?? "This gene"} only takes the ${accepted || "matching"} destination tag.`);
   }
-  if (value.siteId && (value.routeId === "CYTO" || tagRole(value.siteId) !== "site")) problems.push("Cytosolic localization cannot take a second tag.");
+  if (value.siteId && ((value.routeId === "CYTO" && !geneAcceptsCytosolicSite(value.geneId)) || tagRole(value.siteId) !== "site")) problems.push("Cytosolic localization cannot take a second tag.");
   if (value.siteId && !geneAcceptsSite(value.geneId)) {
     const gene = value.geneId ? genesById.get(value.geneId) : undefined;
     problems.push(`${gene?.name ?? "This gene"} cannot take a position tag.`);
@@ -647,7 +709,7 @@ export function placePart(slot: Slot, id: string): boolean {
     amountMaxId: slot === "amount-max" ? id : draft.amountMaxId,
     geneId: slot === "coding" ? id : draft.geneId,
     routeId: slot === "route" ? id : draft.routeId,
-    siteId: slot === "route" && id === "CYTO" ? null : slot === "site" ? id : draft.siteId,
+    siteId: slot === "route" && id === "CYTO" && !geneAcceptsCytosolicSite(draft.geneId) ? null : slot === "site" ? id : draft.siteId,
   };
   notifyDraft();
   return true;
@@ -676,17 +738,14 @@ export function clearPart(slot: Slot): void {
 
 export function clearDraft(): void {
   draft = emptyDraft();
+  editingUid = null;
   notifyDraft();
 }
 
-export function insertDraft(): { cassette: Cassette; index: number } | { problems: string[] } {
-  const problems = draftProblems();
-  if (problems.length > 0 || !draft.promoterId || !draft.geneId) return { problems };
-  const at = clamp(insertion, 0, genome.length);
-  const appending = at === genome.length;
+function draftCassetteFields(): Omit<Cassette, "uid"> | null {
+  if (!draft.promoterId || !draft.geneId) return null;
   const ranged = amountRange(draft.promoterId);
-  const cassette: Cassette = {
-    uid: nextUid(),
+  return {
     name: draft.name.trim(),
     code: draft.code,
     promoterId: draft.promoterId,
@@ -697,16 +756,86 @@ export function insertDraft(): { cassette: Cassette; index: number } | { problem
     routeId: draft.routeId,
     siteId: draft.siteId,
   };
+}
+
+export function insertDraft(): { cassette: Cassette; index: number } | { problems: string[] } {
+  const problems = draftProblems();
+  const fields = draftCassetteFields();
+  if (problems.length > 0 || !fields) return { problems };
+  const at = clamp(insertion, 0, genome.length);
+  const appending = at === genome.length;
+  const cassette: Cassette = { uid: nextUid(), ...fields };
   genome = genome.slice(0, at).concat(cassette, genome.slice(at));
   insertion = appending ? genome.length : at + 1;
   notifyGenome(at);
   return { cassette, index: at };
 }
 
+/** Loads a committed construct onto the bench for editing. */
+export function beginEditCassette(uid: string): boolean {
+  const cassette = genome.find((entry) => entry.uid === uid);
+  if (!cassette) return false;
+  draft = {
+    name: cassette.name,
+    code: cassette.code,
+    promoterId: cassette.promoterId,
+    amountId: cassette.amountId,
+    amountMinId: cassette.amountMinId,
+    amountMaxId: cassette.amountMaxId,
+    geneId: cassette.geneId,
+    routeId: cassette.routeId,
+    siteId: cassette.siteId,
+  };
+  editingUid = uid;
+  notifyDraft();
+  return true;
+}
+
+/** The committed construct being edited, when one is loaded on the bench. */
+export function editingCassette(): Cassette | null {
+  if (!editingUid) return null;
+  return genome.find((entry) => entry.uid === editingUid) ?? null;
+}
+
+/** True while the bench still matches the construct being edited. */
+export function draftMatchesEditing(): boolean {
+  const cassette = editingCassette();
+  const fields = draftCassetteFields();
+  if (!cassette || !fields) return true;
+  return (
+    fields.name === cassette.name &&
+    fields.code === cassette.code &&
+    fields.promoterId === cassette.promoterId &&
+    fields.amountId === cassette.amountId &&
+    fields.amountMinId === cassette.amountMinId &&
+    fields.amountMaxId === cassette.amountMaxId &&
+    fields.geneId === cassette.geneId &&
+    fields.routeId === cassette.routeId &&
+    fields.siteId === cassette.siteId
+  );
+}
+
+/** Swaps the construct being edited for the bench version, keeping its slot. */
+export function updateEditedCassette(): { cassette: Cassette; index: number } | { problems: string[] } {
+  const cassette = editingCassette();
+  if (!cassette) return { problems: ["The construct being edited is no longer in the genome."] };
+  const problems = draftProblems();
+  const fields = draftCassetteFields();
+  if (problems.length > 0 || !fields) return { problems };
+  const index = genome.findIndex((entry) => entry.uid === cassette.uid);
+  if (index < 0) return { problems: ["The construct being edited is no longer in the genome."] };
+  const replacement: Cassette = { uid: cassette.uid, ...fields };
+  genome = genome.slice(0, index).concat(replacement, genome.slice(index + 1));
+  editingUid = null;
+  notifyGenome(null);
+  return { cassette: replacement, index };
+}
+
 export function removeCassette(uid: string): boolean {
   const index = genome.findIndex((cassette) => cassette.uid === uid);
   if (index < 0) return false;
   genome = genome.slice(0, index).concat(genome.slice(index + 1));
+  if (uid === editingUid) editingUid = null;
   insertion = clamp(insertion, 0, genome.length);
   notifyGenome(null);
   return true;
@@ -731,6 +860,7 @@ export function applySnapshot(value: GenomeSnapshot): void {
   draft = sanitizeDraft(value.draft);
   const loaded = value.genome.map(copyCassette);
   genome = catalogPopulated ? loaded : loaded.filter((cassette) => !isCatalogCassette(cassette.uid));
+  editingUid = editingUid !== null && genome.some((cassette) => cassette.uid === editingUid) ? editingUid : null;
   insertion = clamp(insertion, 0, genome.length);
   notifyDraft();
   notifyGenome(null);
@@ -775,6 +905,7 @@ export function resetGenomeState(): void {
   catalogPopulated = false;
   genome = [];
   insertion = 0;
+  editingUid = null;
   notifyDraft();
   notifyGenome(null);
 }
@@ -801,10 +932,6 @@ function catalogGenome(): Cassette[] {
   }));
 }
 
-function genomeGeneIds(): Set<string> {
-  return new Set(genome.map((cassette) => cassette.geneId));
-}
-
 function catalogTagFields(geneId: string): { routeId: string | null; siteId: string | null } {
   return CATALOG_PLACEMENTS[geneId] ?? { routeId: null, siteId: null };
 }
@@ -821,7 +948,7 @@ function readAmountFields(
   return { amountId, amountMinId: null, amountMaxId: null };
 }
 
-function readTagFields(body: { routeId?: unknown; siteId?: unknown; tagId?: unknown }): { routeId: string | null; siteId: string | null } {
+function readTagFields(body: { routeId?: unknown; siteId?: unknown; tagId?: unknown }, geneId: string | null): { routeId: string | null; siteId: string | null } {
   let routeId = typeof body.routeId === "string" ? body.routeId : null;
   let siteId = typeof body.siteId === "string" ? body.siteId : null;
   if (!routeId && !siteId && typeof body.tagId === "string") {
@@ -829,7 +956,7 @@ function readTagFields(body: { routeId?: unknown; siteId?: unknown; tagId?: unkn
     else if (tagRole(body.tagId) === "site") siteId = body.tagId;
   }
   if (!routeId || tagRole(routeId) !== "route") routeId = null;
-  if (!siteId || tagRole(siteId) !== "site" || routeId === "CYTO") siteId = null;
+  if (!siteId || tagRole(siteId) !== "site" || (routeId === "CYTO" && !geneAcceptsCytosolicSite(geneId))) siteId = null;
   return { routeId, siteId };
 }
 
@@ -890,7 +1017,7 @@ function sanitizeDraft(value: unknown): Draft {
   const code = typeof body.code === "string" ? normalizeCode(body.code) : "";
   const promoterId = typeof body.promoterId === "string" && promotersById.has(body.promoterId) ? body.promoterId : null;
   const geneId = typeof body.geneId === "string" && genesById.has(body.geneId) ? body.geneId : null;
-  return { name, code, promoterId, geneId, ...readAmountFields(body, promoterId), ...readTagFields(body) };
+  return { name, code, promoterId, geneId, ...readAmountFields(body, promoterId), ...readTagFields(body, geneId) };
 }
 
 function sanitizeCassette(value: unknown): Cassette | null {
@@ -898,7 +1025,7 @@ function sanitizeCassette(value: unknown): Cassette | null {
   const body = value as { uid?: unknown; name?: unknown; code?: unknown; promoterId?: unknown; amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown };
   if (typeof body.promoterId !== "string" || !promotersById.has(body.promoterId)) return null;
   if (typeof body.geneId !== "string" || !genesById.has(body.geneId)) return null;
-  const tags = readTagFields(body);
+  const tags = readTagFields(body, body.geneId);
   const gene = genesById.get(body.geneId);
   const name = typeof body.name === "string" && body.name.trim().length > 0 ? body.name.trim().slice(0, NAME_LIMIT) : gene?.name ?? "Construct";
   const supplied = typeof body.code === "string" ? normalizeCode(body.code) : "";

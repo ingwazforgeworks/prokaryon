@@ -1278,7 +1278,8 @@
       .editor-tray-bar,
       .editor-actions {
         display: flex;
-        align-items: center;
+        flex-direction: column;
+        align-items: stretch;
         gap: 8px;
         flex: none;
       }
@@ -1420,6 +1421,12 @@
         right: 6px;
         z-index: 2;
       }
+      .editor-stage .editor-clear {
+        position: absolute;
+        top: 6px;
+        right: 32px;
+        z-index: 2;
+      }
       .editor-track {
         display: grid;
         /* Same nine columns in every promoter mode; items auto-place in DOM order. */
@@ -1481,6 +1488,16 @@
       }
       .editor-slot.is-selected {
         box-shadow: inset 0 0 0 1px #e2a04a, inset 0 1px 0 rgba(214, 236, 234, 0.08);
+      }
+      .editor-slot.is-illegal,
+      .editor-slot.is-illegal.is-selected,
+      .editor-slot.is-illegal.is-locked {
+        opacity: 1;
+        pointer-events: auto;
+        cursor: pointer;
+        border-style: solid;
+        border-color: #c44b4b;
+        box-shadow: inset 0 0 0 2px #c44b4b;
       }
       .editor-track.is-aiming .editor-slot:not(.is-target) {
         opacity: 0.38;
@@ -3161,14 +3178,14 @@
         transition: opacity 1000ms ease;
       }
       .splash img {
-        /* Never stretch the logo past its 1024x565 source: render at native
-           resolution, and only compress (scale down) when the viewport cannot
-           hold it. The caps divide by the UI scale because the root is
-           transform-scaled, so the art cannot be upscaled through it either. */
+        /* Render the logo at a third of its 1877x838 source by default, and
+           compress further when the viewport cannot hold it. The caps divide
+           by the UI scale because the root is transform-scaled, so the art
+           cannot be upscaled through it either. */
         width: auto;
         height: auto;
-        max-width: calc(min(100vw, 1024px) / var(--ui-scale));
-        max-height: calc(min(100vh, 565px) / var(--ui-scale));
+        max-width: calc(min(100vw, 1877px / 3) / var(--ui-scale));
+        max-height: calc(min(100vh, 838px / 3) / var(--ui-scale));
         object-fit: contain;
         pointer-events: none;
         opacity: 0;
@@ -3863,8 +3880,8 @@
       })();
     </script>
     <div id="title" hidden>
-      <button type="button" id="splash" class="splash" aria-label="Gnome Boys Research Solutions. Click to continue.">
-        <img src="/branding/gbrs_logo.png" alt="" width="1024" height="565" />
+      <button type="button" id="splash" class="splash" aria-label="Ingwaz Forgeworks. Click to continue.">
+        <img src="/branding/IngwazForgeworks_Splash.png" alt="" width="1877" height="838" />
         <span class="splash-skip">Click to continue</span>
       </button>
       <div id="main-menu" class="main-menu" inert>
@@ -3948,6 +3965,9 @@
         <button id="mutation-points-inc" type="button" aria-label="Increase mutation points">+</button>
       </div>
       <div class="debug-row">
+        <button id="unlock-all-genes" class="debug-wide" type="button">Unlock all Genes</button>
+      </div>
+      <div class="debug-row">
         <button id="delete-all-genes" class="debug-wide" type="button">Delete All Genes</button>
       </div>
       <div class="debug-row">
@@ -3957,6 +3977,9 @@
       <p id="cell-state-status" class="debug-note"></p>
       </div>
       <div id="debug-environment" hidden>
+      <div class="debug-row">
+        <button id="zoom-free" class="debug-wide" type="button" aria-pressed="false">Free zoom</button>
+      </div>
       <div class="debug-row">
         <span>Time</span>
         <button id="time-dec" type="button" aria-label="One hour earlier">−</button>
@@ -4112,6 +4135,11 @@
       </div>
       <div class="debug-row">
         <button id="cell-ccw" class="debug-wide" type="button" aria-pressed="false">CCW/CW Switching</button>
+      </div>
+      <div class="debug-row">
+        <span>Pilus mode</span>
+        <button id="pili-mode-transmembrane" class="debug-wide active" type="button" aria-pressed="true">Transmembrane pili</button>
+        <button id="pili-mode-secreted" class="debug-wide" type="button" aria-pressed="false">Secreted pili</button>
       </div>
       </div>
       <div id="debug-morphology" hidden>

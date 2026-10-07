@@ -15,7 +15,9 @@ import type { FlagellumSite } from "./shape";
  * both follow its total expression. The motor sits in the membrane wherever
  * its position tag puts it, and the cilia around it row the cell toward the
  * direction that site names; motors on opposing sites cancel, the way
- * opposing flagellar tufts do.
+ * opposing flagellar tufts do, while an untagged motor coats every site
+ * evenly and flaps the cilia with no order or direction, so the coat
+ * stirs but never pushes.
  */
 
 /** Coat density at full expression, matching the sandbox slider's ceiling. */
@@ -71,16 +73,26 @@ const MOTOR_SITES: readonly FlagellumSite[] = ["polar", "antipolar", "lateral", 
  * motor on one site rows straight and motors on opposing sites cancel to a
  * standstill. Strength is the clamped length of the combined vector, so mixed
  * placements both steer between the named directions and row more gently than
- * a full single-site motor.
+ * a full single-site motor. A motor spread evenly over every site — an
+ * untagged construct — carries no positional direction: the coat keeps
+ * beating at its expression strength but with no wave order, flapping at
+ * random phases like a sandbox coat at zero order.
  */
 export function ciliumMotorDrive(motor: FlagellinBySite): CiliumMotorDrive {
   let x = 0;
   let y = 0;
+  let lowest = Infinity;
+  let highest = 0;
   for (const site of MOTOR_SITES) {
+    const level = motor[site];
     const direction = MOTOR_DIRECTIONS[site];
-    x += motor[site] * direction.x;
-    y += motor[site] * direction.y;
+    x += level * direction.x;
+    y += level * direction.y;
+    lowest = Math.min(lowest, level);
+    highest = Math.max(highest, level);
   }
+  if (highest <= 0) return { x: 0, y: 0, strength: 0 };
+  if (highest - lowest <= 1e-6) return { x: 0, y: 0, strength: Math.min(1, highest * MOTOR_SITES.length) };
   const magnitude = Math.hypot(x, y);
   if (magnitude < 1e-6) return { x: 0, y: 0, strength: 0 };
   return { x: x / magnitude, y: y / magnitude, strength: Math.min(1, magnitude) };

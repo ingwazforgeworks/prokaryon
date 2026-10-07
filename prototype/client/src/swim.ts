@@ -410,15 +410,18 @@ function flagellarForce(body: SwimBody): { x: number; y: number; torque: number 
  * the lateral flank, antipolar toward the antilateral flank. Reversal turns every stroke
  * around. Speed, sway, and order scale the push. At zero speed or sway, the hairs produce no force.
  * A motor protein's drive replaces the switch: every cilium rows toward the motor's
- * direction with its strength, and cilia whose oar cannot row that way sit out.
+ * direction with its strength, and cilia whose oar cannot row that way sit out. A motor
+ * spread over every site has no direction or wave of its own, so its cilia flap at
+ * random phases and push the cell nowhere.
  */
 function ciliaryForce(body: SwimBody): { x: number; y: number; torque: number } {
   if (!ciliaBeating(body)) return { x: 0, y: 0, torque: 0 };
   const speed = Math.min(Math.max(body.ciliaSpeed, 0), 2);
   const sway = Math.min(Math.max(body.ciliaSway, 0), 1);
-  const order = Math.min(Math.max(body.ciliaOrder, 0), 1);
+  const order = ciliaWaveOrder(body);
   const mirror = body.ciliaReverse ? -1 : 1;
   const motor = body.ciliaMotor;
+  const directed = motor !== undefined && (motor.x !== 0 || motor.y !== 0);
   const placed = ciliaPlacements(body.ciliation, body.ciliaLength, body.length, body.width, body.bend);
   const cos = Math.cos(body.angle);
   const sin = Math.sin(body.angle);
@@ -426,9 +429,10 @@ function ciliaryForce(body: SwimBody): { x: number; y: number; torque: number } 
   let y = 0;
   let torque = 0;
   for (const cilium of placed) {
-    const stroke = motor
-      ? motorStrokeSign(cilium.dirX, cilium.dirY, motor.x, motor.y) * mirror
-      : ciliaStrokeSign(cilium.x, cilium.y, body.length, body.width, body.bend, body.ciliaSwitch) * mirror;
+    const stroke =
+      (directed && motor
+        ? motorStrokeSign(cilium.dirX, cilium.dirY, motor.x, motor.y)
+        : ciliaStrokeSign(cilium.x, cilium.y, body.length, body.width, body.bend, body.ciliaSwitch)) * mirror;
     const push = cilium.length * speed * sway * order * CILIA_THRUST * (motor ? motor.strength : 1);
     const lx = -cilium.dirY * stroke;
     const ly = cilium.dirX * stroke;
@@ -455,18 +459,30 @@ function motorStrokeSign(dirX: number, dirY: number, targetX: number, targetY: n
   return 0;
 }
 
+/**
+ * The coat's wave order. A motor spread over every site has no position to
+ * wave from, so its coat flaps at random phases: order reads as zero and the
+ * cilia stir the water without pushing the cell anywhere.
+ */
+function ciliaWaveOrder(body: SwimBody): number {
+  const order = Math.min(Math.max(body.ciliaOrder, 0), 1);
+  const motor = body.ciliaMotor;
+  if (motor && motor.x === 0 && motor.y === 0) return 0;
+  return order;
+}
+
 function ciliaBeating(body: SwimBody): boolean {
   if (body.ciliaMotor && !(body.ciliaMotor.strength > 0.02)) return false;
   return body.ciliation >= 1 && body.ciliaLength > 0.02 && body.ciliaSpeed > 0.02 && body.ciliaSway > 0.02;
 }
 
 function ciliaDriving(body: SwimBody): boolean {
-  return ciliaBeating(body) && body.ciliaOrder > 0.02;
+  return ciliaBeating(body) && ciliaWaveOrder(body) > 0.02;
 }
 
 function ciliaDrive(body: SwimBody): number {
   if (!ciliaDriving(body)) return 0;
-  const order = Math.min(Math.max(body.ciliaOrder, 0), 1);
+  const order = ciliaWaveOrder(body);
   return (Math.min(body.ciliaSpeed, 2) / 2) * Math.min(Math.max(body.ciliaSway, 0), 1) * order;
 }
 

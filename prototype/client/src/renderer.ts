@@ -11,7 +11,7 @@ import { pressureAt, PressureField } from "./pressure";
 import { SulfexField } from "./sulfex";
 import { TemperatureField } from "./temperature";
 import { TEXEL_COLUMNS, TEXEL_ORIGIN_X, TEXEL_ORIGIN_Y, TEXEL_ROWS, TEXEL_SIZE, TEXEL_SPAN_X, TEXEL_SPAN_Y, texelAt } from "./texels";
-import type { CellSnapshot, ViewSnapshot } from "./types";
+import type { CellSnapshot, PilusFragmentSnapshot, ViewSnapshot } from "./types";
 
 const LOGICAL_WIDTH = 640;
 const LOGICAL_HEIGHT = 360;
@@ -19,6 +19,9 @@ const FLAGELLUM_SEGMENTS = 20;
 const FLAGELLUM_BLEND_SECONDS = 0.45;
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 2;
+/** Debug range: close enough to inspect a membrane, wide enough to frame the water column. */
+const ZOOM_FREE_MIN = 0.05;
+const ZOOM_FREE_MAX = 256;
 
 const PALETTES: number[][][] = [
   [
@@ -50,6 +53,9 @@ const FLAGELLUM_COLORS = [
   [0.68, 0.68, 0.7],
   [0.68, 0.68, 0.7],
 ];
+
+/** Secreted fragments draw thinner than the membrane needles they shed from. */
+const PILUS_FRAGMENT_WIDTH_SCALE = 0.35;
 
 const CILIUM_COLORS = [
   [0.42, 0.42, 0.44],
@@ -1142,6 +1148,7 @@ export class CellRenderer {
   private smoothCamera = false;
   private zoom = ZOOM_MIN;
   private zoomFloor = ZOOM_MIN;
+  private zoomFree = false;
   private frame: { halfView: [number, number]; camera: [number, number] } | null = null;
   private stroke: Array<() => boolean> = [];
   private paintHistory: Array<Array<() => boolean>> = [];
@@ -1281,7 +1288,22 @@ export class CellRenderer {
   setCellScale(scale: number): void {
     // 0.5× → 0.5, 1× → 1, 3× → 2.
     this.zoomFloor = scale <= 1 ? scale : 0.5 * scale + 0.5;
-    this.zoom = Math.min(ZOOM_MAX, Math.max(this.zoomFloor, this.zoom));
+    this.clampZoom();
+  }
+
+  /** Wheel zoom ignores the gameplay floor and ceiling while this is on. */
+  setZoomUnrestricted(enabled: boolean): void {
+    this.zoomFree = enabled;
+    this.clampZoom();
+  }
+
+  private zoomLimits(): [number, number] {
+    return this.zoomFree ? [ZOOM_FREE_MIN, ZOOM_FREE_MAX] : [this.zoomFloor, ZOOM_MAX];
+  }
+
+  private clampZoom(): void {
+    const [min, max] = this.zoomLimits();
+    this.zoom = Math.min(max, Math.max(min, this.zoom));
   }
 
   setMembrane(pixels: number, style: number, color: [number, number, number]): void {
@@ -1324,7 +1346,8 @@ export class CellRenderer {
     if (deltaMode === 1) delta *= 16;
     else if (deltaMode === 2) delta *= 400;
     const next = this.zoom * Math.exp(delta * 0.0032);
-    this.zoom = Math.min(ZOOM_MAX, Math.max(this.zoomFloor, next));
+    const [min, max] = this.zoomLimits();
+    this.zoom = Math.min(max, Math.max(min, next));
   }
 
   private allocateWorldTarget(): void {
@@ -1370,6 +1393,7 @@ export class CellRenderer {
     light: [number, number, number],
     intensity: number,
     camera: [number, number],
+    pilusFragments: readonly PilusFragmentSnapshot[] = [],
   ): void {
     const gl = this.gl;
     const ordered = [...cells].sort((a, b) => a.y - b.y || a.id - b.id);
@@ -1456,7 +1480,8 @@ export class CellRenderer {
     this.bubbles.update(dt);
     this.bubbles.draw(halfView, snapped);
     this.decorations.draw("fore", halfView, snapped, intensity, lights, drawnPixelsPerUnit);
-    this.background.drawInFront(this.zoom);
+    // Keep the vignette inside the designed zoom band when free zoom is outside it.
+    this.background.drawInFront(Math.min(ZOOM_MAX, Math.max(this.zoomFloor, this.zoom)));
     if (this.fieldOverlay === "temperature") this.drawTemperature(halfView, snapped);
     else if (this.fieldOverlay) this.drawConcentration(halfView, snapped, this.fieldOverlay);
     if (this.texelGrid) this.drawTexelGrid(halfView, snapped);
@@ -1483,6 +1508,8 @@ export class CellRenderer {
     );
     const ciliumHalf = Math.min(filamentHalf, screenPixel * 0.5);
     for (const cell of ordered) this.appendCilia(cell, halfView, presented.camera, ciliumHalf, dt);
+    if (pilusFragments.length > 0)
+      this.appendPilusFragments(pilusFragments, halfView, presented.camera, filamentHalf * PILUS_FRAGMENT_WIDTH_SCALE);
     this.flushRibbon();
     this.drawTemperatureLabels(halfView, presented.camera);
   }
@@ -1913,6 +1940,34 @@ export class CellRenderer {
   }
 
   /**
+   * Secreted pilus fragments in flight, in world coordinates. Each is a short
+   * line trailing back along its launch direction, drawn on the same front
+   * pass as the cilia with its own fading opacity.
+   */
+  private appendPilusFragments(
+    fragments: readonly PilusFragmentSnapshot[],
+    halfView: [number, number],
+    camera: [number, number],
+    halfWidth: number,
+  ): void {
+    const color = FLAGELLUM_COLORS[0];
+    for (const fragment of fragments) {
+      if (fragment.alpha <= 0.01 || fragment.length < 1e-3) continue;
+      if (
+        Math.abs(fragment.x - camera[0]) > halfView[0] + fragment.length ||
+        Math.abs(fragment.y - camera[1]) > halfView[1] + fragment.length
+      ) {
+        continue;
+      }
+      whipScratch[0].x = fragment.x - fragment.dirX * fragment.length;
+      whipScratch[0].y = fragment.y - fragment.dirY * fragment.length;
+      whipScratch[1].x = fragment.x;
+      whipScratch[1].y = fragment.y;
+      this.queueRibbon(whipScratch, 2, halfWidth, 0, fragment.alpha, color, halfView, camera);
+    }
+  }
+
+  /**
    * Hairs on the outline. A quick straight stroke and a slower curled return.
    * Order blends a private phase into a wave that runs from one long-axis pole
    * to the other. Reversal flips that wave and the power stroke. The switch names
@@ -1937,6 +1992,7 @@ export class CellRenderer {
     const sway = Math.min(1, Math.max(0, cell.ciliaSway));
     const order = Math.min(1, Math.max(0, cell.ciliaOrder));
     const sense = cell.ciliaReverse ? -1 : 1;
+    const still = cell.ciliaStill === true;
     const color = CILIUM_COLORS[cell.palette] ?? CILIUM_COLORS[0];
     for (const cilium of cell.cilia) {
       if (cilium.length < 1e-3) continue;
@@ -1947,7 +2003,7 @@ export class CellRenderer {
       const stroke = ciliaStrokeSign(cilium.x, cilium.y, cell.length, cell.width, bend, cell.ciliaSwitch);
       const root = toWorld(cilium.x, cilium.y, cell.x, cell.y, cos, sin);
       const dir = toWorld(cilium.dirX, cilium.dirY, 0, 0, cos, sin);
-      const count = fillCilium(whipScratch, root[0], root[1], dir[0], dir[1], cilium.length, phase, sway * stroke * sense);
+      const count = fillCilium(whipScratch, root[0], root[1], dir[0], dir[1], cilium.length, phase, still ? 0 : sway * stroke * sense);
       this.queueRibbon(whipScratch, count, halfWidth, 0, cover, color, halfView, camera);
     }
   }

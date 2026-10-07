@@ -66,12 +66,34 @@ check(oscillating(2, { amountMinId: "OFF", amountMaxId: "HYPER" }) === 1, "an os
 check(flagellinFromConstructs([construct({ promoterId: "OSCL" })], 0).polar === 0, "an oscillatory construct with no tiles bottoms out at zero");
 check(Math.abs(flagellinFromConstructs([construct({ promoterId: "OSCL" })], 1).polar - 0.05) < 1e-9, "an oscillatory construct with no tiles swings up to the trace baseline");
 
+// Co-oscillatory promoter: the same cycle as oscillatory, perfectly out of
+// phase — crest at t=0, trough at the half period, crest again at the period.
+const coOscillating = (timeSeconds: number, overrides: Partial<FlagellinConstruct> = {}): number =>
+  flagellinFromConstructs(
+    [construct({ promoterId: "COSL", amountMinId: "MICRO", amountMaxId: "HYPER", ...overrides })],
+    timeSeconds,
+  ).polar;
+check(coOscillating(0) === 1, "the co-oscillatory crest equals the maximum tile");
+check(coOscillating(2) === 0.1, "the co-oscillatory trough arrives at the half period");
+check(coOscillating(4) === 1, "a full period returns to the crest");
+check(Math.abs(coOscillating(0.5) + oscillating(0.5) - 1.1) < 1e-9, "co-oscillatory and oscillatory levels always sum to one full swing");
+check(coOscillating(0) === oscillating(2) && coOscillating(2) === oscillating(0), "co-oscillatory mirrors oscillatory half a period apart");
+check(flagellinFromConstructs([construct({ promoterId: "COSL" })], 0).polar === 0.1, "a co-oscillatory construct with no tiles crests at the trace baseline");
+check(flagellinFromConstructs([construct({ promoterId: "COSL" })], 2).polar === 0, "a co-oscillatory construct with no tiles bottoms out at zero");
+
 const oscillatingMotor = (timeSeconds: number): number =>
   motorFromConstructs(
     [construct({ geneId: "FLGM", routeId: "TransmembraneSignal", promoterId: "OSCL", amountMinId: "MICRO", amountMaxId: "HYPER" })],
     timeSeconds,
   ).polar;
 check(oscillatingMotor(0) === 0.1 && oscillatingMotor(2) === 1 && oscillatingMotor(4) === 0.1, "an oscillatory motor pulses over its range");
+
+const coOscillatingMotor = (timeSeconds: number): number =>
+  motorFromConstructs(
+    [construct({ geneId: "FLGM", routeId: "TransmembraneSignal", promoterId: "COSL", amountMinId: "MICRO", amountMaxId: "HYPER" })],
+    timeSeconds,
+  ).polar;
+check(coOscillatingMotor(0) === 1 && coOscillatingMotor(2) === 0.1 && coOscillatingMotor(4) === 1, "a co-oscillatory motor pulses opposite the oscillatory motor");
 
 const motor = (overrides: Partial<FlagellinConstruct>): ReturnType<typeof motorFromConstructs> =>
   motorFromConstructs([construct({ geneId: "FLGM", routeId: "TransmembraneSignal", ...overrides })]);
@@ -102,6 +124,7 @@ check(!genomeCanDriveFlagellin([construct({ geneId: "FLGM", routeId: "Transmembr
 check(!genomeCanDriveFlagellin([construct({ amountId: "HYPER", promoterId: "COND" })]), "unexpressed flagellin cannot drive flagella");
 
 check(genomeHasOscillation([construct({ promoterId: "OSCL" })]), "oscillation detection keys on the promoter");
+check(genomeHasOscillation([construct({ promoterId: "COSL" })]), "co-oscillatory constructs oscillate too");
 check(!genomeHasOscillation([construct({})]), "constant promoters do not oscillate");
 
 // Beat clock: the motor fires in discrete pulses whose cycle length scales

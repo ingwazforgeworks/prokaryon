@@ -29,7 +29,9 @@ export type UiCue = keyof typeof CUES;
 
 const clips: HTMLAudioElement[] = [];
 
-function make(url: string): HTMLAudioElement {
+/** Returns null outside the browser (e.g. node test runs) so importing stays safe. */
+function make(url: string): HTMLAudioElement | null {
+  if (typeof Audio === "undefined") return null;
   const audio = new Audio(url);
   audio.preload = "auto";
   audio.volume = gameSettings().ui;
@@ -37,7 +39,7 @@ function make(url: string): HTMLAudioElement {
   return audio;
 }
 
-const bank = new Map<UiCue, HTMLAudioElement>(
+const bank = new Map<UiCue, HTMLAudioElement | null>(
   (Object.keys(CUES) as UiCue[]).map((cue) => [cue, make(CUES[cue])]),
 );
 

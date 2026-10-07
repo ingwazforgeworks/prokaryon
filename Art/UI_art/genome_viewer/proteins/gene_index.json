@@ -533,6 +533,33 @@
           "column": 2
         },
         {
+          "code": "TPRN",
+          "name": "Taperin",
+          "type": "P",
+          "color": "slate blue",
+          "shape": "short curved polymer of three globular actin-like domains",
+          "row": 1,
+          "column": 3
+        },
+        {
+          "code": "CRYS",
+          "name": "Crystallin",
+          "type": "M",
+          "color": "pale ochre",
+          "shape": "membrane anchor supporting broad extracellular bricklike beta domain",
+          "row": 1,
+          "column": 1
+        },
+        {
+          "code": "ISPR",
+          "name": "Isoprene Synthase",
+          "type": "M",
+          "color": "gray lavender",
+          "shape": "membrane pore with large asymmetric lower synthesis lobe",
+          "row": 1,
+          "column": 2
+        },
+        {
           "code": "SIZR",
           "name": "Size Regulator",
           "type": "P",

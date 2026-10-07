@@ -2,6 +2,14 @@ import { titleScreenOpen } from "./menu";
 import { playCue } from "./uiSound";
 
 export type DockTab = "genome" | "gene-editor" | "expression" | "environment" | "codex" | "tech-tree";
+type DockWindow = "genome" | "gene-editor" | "codex" | "tech-tree" | "expression";
+
+let requestOpen: ((tab: DockWindow) => void) | null = null;
+
+/** Opens a dock window from outside the dock (used by the genome viewer's Edit Gene). */
+export function openDockWindow(tab: DockWindow): void {
+  requestOpen?.(tab);
+}
 
 const HOTKEYS: Partial<Record<string, DockTab>> = {
   KeyG: "genome",
@@ -36,7 +44,7 @@ export function initDock(): void {
     throw new Error("missing section dock");
   }
 
-  let open: "genome" | "gene-editor" | "codex" | "tech-tree" | "expression" | null = null;
+  let open: DockWindow | null = null;
   let environmentOn = false;
 
   const setPressed = (tab: DockTab | null): void => {
@@ -54,7 +62,7 @@ export function initDock(): void {
     for (const listener of environmentListeners) listener(environmentOn);
   };
 
-  const setOpen = (next: "genome" | "gene-editor" | "codex" | "tech-tree" | "expression" | null): void => {
+  const setOpen = (next: DockWindow | null): void => {
     open = next;
     viewer.hidden = next !== "genome";
     geneEditor.hidden = next !== "gene-editor";
@@ -72,6 +80,8 @@ export function initDock(): void {
     }
     setEnvironment(!environmentOn);
   };
+
+  requestOpen = (tab) => setOpen(tab);
 
   viewerClose.addEventListener("click", () => {
     setOpen(null);
