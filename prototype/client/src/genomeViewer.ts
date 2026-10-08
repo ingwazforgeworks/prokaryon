@@ -9,6 +9,7 @@ import {
   cassetteMutationCost,
   CYTOSOLIC_ICON,
   geneById,
+  getDraft,
   getGenome,
   persistGenome,
   promoterById,
@@ -20,6 +21,8 @@ import {
   type Cassette,
 } from "./genomeState";
 import { openDockWindow } from "./dock";
+import { genomeToPasta, parsePasta } from "./pasta";
+import { speciesFileStem } from "./species";
 import { playCue } from "./uiSound";
 
 const SHEET_URL = "/ui/genome_viewer/DNA_Pixel_Grooves_32_Frames_Long.png";
@@ -59,7 +62,9 @@ export function initGenomeViewer(): void {
   const viewForward = document.querySelector<HTMLButtonElement>("#genome-scroll-forward");
   const viewOut = document.querySelector<HTMLButtonElement>("#genome-scroll-out");
   const viewIn = document.querySelector<HTMLButtonElement>("#genome-scroll-in");
-  if (!viewer || !list || !search || !categories || !categoryLabel || !empty || !detail || !browser || !canvas || !map || !segments || !viewWindow || !viewLabel || !viewBack || !viewForward || !viewOut || !viewIn) {
+  const pastaSave = document.querySelector<HTMLButtonElement>("#genome-pasta-save");
+  const pastaLoad = document.querySelector<HTMLButtonElement>("#genome-pasta-load");
+  if (!viewer || !list || !search || !categories || !categoryLabel || !empty || !detail || !browser || !canvas || !map || !segments || !viewWindow || !viewLabel || !viewBack || !viewForward || !viewOut || !viewIn || !pastaSave || !pastaLoad) {
     throw new Error("missing genome viewer");
   }
   viewer.addEventListener("pointerdown", (event) => {
@@ -136,6 +141,67 @@ export function initGenomeViewer(): void {
         return;
       }
       playCue("success");
+    });
+  });
+
+  /** Repurposes the confirmation card as a plain notice with a single OK button. */
+  const showNotice = (title: string, message: string): void => {
+    confirmTitle.textContent = title;
+    confirmCopy.textContent = message;
+    confirmRoot.setAttribute("aria-label", title);
+    confirmDelete.hidden = true;
+    confirmCancel.textContent = "OK";
+    lastDeleteButton = null;
+    confirmRoot.hidden = false;
+    confirmCancel.focus();
+  };
+
+  // .pasta export: the committed genome as FASTA-like text, downloaded whole.
+  pastaSave.addEventListener("pointerenter", () => playCue("hover"));
+  pastaLoad.addEventListener("pointerenter", () => playCue("hover"));
+  pastaSave.addEventListener("click", () => {
+    if (getGenome().length === 0) {
+      showNotice("Save .pasta", "The genome has no genes to save yet.");
+      playCue("deny");
+      return;
+    }
+    const blob = new Blob([genomeToPasta(getGenome())], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${speciesFileStem()}.pasta`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    playCue("confirm");
+  });
+
+  // .pasta import: any genome the catalog can read, loaded over the current one.
+  const pastaFile = document.createElement("input");
+  pastaFile.type = "file";
+  pastaFile.accept = ".pasta,text/plain";
+  pastaFile.hidden = true;
+  viewer.append(pastaFile);
+  pastaLoad.addEventListener("click", () => {
+    playCue("button");
+    pastaFile.click();
+  });
+  pastaFile.addEventListener("change", () => {
+    const file = pastaFile.files?.[0];
+    pastaFile.value = "";
+    if (!file) return;
+    void file.text().then((text) => {
+      const parsed = parsePasta(text);
+      if (parsed.cassettes.length === 0) {
+        showNotice("Load .pasta", parsed.errors[0] ?? "The file contains no genes.");
+        playCue("reject");
+        return;
+      }
+      applySnapshot({ v: 1, draft: getDraft(), genome: parsed.cassettes });
+      void persistGenome();
+      playCue("success");
+      if (parsed.errors.length > 0) {
+        showNotice("Load .pasta", `Loaded ${parsed.cassettes.length} of ${parsed.cassettes.length + parsed.errors.length} genes. The rest could not be read: ${parsed.errors[0]}`);
+      }
     });
   });
 
@@ -223,6 +289,10 @@ export function initGenomeViewer(): void {
     deleteButton.addEventListener("click", () => {
       confirmCopy.textContent = `Remove ${cassette.name} (${code}) from the genome? The cell will stop producing it. This cannot be undone.`;
       confirmTarget = cassette;
+      confirmTitle.textContent = "Delete gene";
+      confirmRoot.setAttribute("aria-label", "Delete gene confirmation");
+      confirmDelete.hidden = false;
+      confirmCancel.textContent = "Cancel";
       confirmRoot.hidden = false;
       playCue("button");
       confirmCancel.focus();

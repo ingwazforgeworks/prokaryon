@@ -64,6 +64,10 @@ const PILUS_FRAGMENT_WIDTH_SCALE = 0.35;
  * swim speed is speed / rate — under a unit at full swim, a fraction of the
  * body. The title glance pans on its own slow cosine, so it keeps the
  * snappier follow that frames the menu swimmers exactly where the pan put them.
+ *
+ * The eased position is then presented by sliding the logical-pixel picture
+ * in whole display pixels. Otherwise a slow move sits still until it crosses
+ * a logical pixel and lurches by the integer upscale.
  */
 const FOLLOW_RATE_GAMEPLAY = 6;
 const FOLLOW_RATE_TITLE = 18;
@@ -133,6 +137,8 @@ flat out float uSeed;
 flat out float uAngle;
 flat out vec3 uMembraneColor;
 flat out float uPaletteIndex;
+flat out float uHeat;
+flat out float uOsmotic;
 flat out vec4 uTaper;
 flat out vec3 uPigment;
 out vec2 vLocal;
@@ -165,6 +171,8 @@ void main() {
   uAngle = iLook.x;
   uMembraneColor = iLook.yzw;
   uPaletteIndex = iPaletteDepth.x;
+  uHeat = iPaletteDepth.z;
+  uOsmotic = iPaletteDepth.w;
   uTaper = iTaper;
   uPigment = iPigment.rgb;
 }`;
@@ -191,9 +199,12 @@ flat in float uSeed;
 flat in float uAngle;
 flat in vec3 uMembraneColor;
 flat in float uPaletteIndex;
+flat in float uHeat;
+flat in float uOsmotic;
 flat in vec4 uTaper;
 flat in vec3 uPigment;
 uniform float uPixel;
+uniform float uStressTime;
 uniform vec3 uLightDir;
 uniform float uLightIntensity;
 uniform vec3 uPointLights[48];
@@ -314,6 +325,93 @@ float taperRadiusScale(vec2 axisP, float halfSegment, float radius, float bend) 
   return min(axes.x, axes.y);
 }
 
+// Several traveling waves so a hot membrane boils instead of flexing as one curve.
+float heatRipple(vec2 axisP, float radius, float halfSegment) {
+  float ang = atan(axisP.y, axisP.x);
+  float along = axisP.x / max(halfSegment + radius, 0.02);
+  float t = uStressTime;
+  float n = sin(ang * 3.2 + t * 4.6 + uSeed);
+  n += 0.72 * sin(ang * 7.4 - t * 8.1 + along * 6.5 + uSeed * 1.7);
+  n += 0.46 * sin(ang * 12.8 + t * 12.4 + along * 3.2);
+  n += 0.3 * sin(along * 18.0 - t * 16.0 + uSeed * 4.1);
+  return n;
+}
+
+float heatOffset(vec2 axisP, float radius, float halfSegment) {
+  if (uHeat < 0.001) return 0.0;
+  return uHeat * radius * 0.22 * heatRipple(axisP, radius, halfSegment);
+}
+
+// 0 where the wall holds, 1 where the contents are pushing through.
+float heatPush(vec2 p) {
+  vec2 axisP = toAxis(p);
+  return clamp(heatRipple(axisP, max(uRadius, 1.0e-4), uHalfSegment) * 0.34 + 0.5, 0.0, 1.0);
+}
+
+float heatBleb(vec2 p, float seed, float speed) {
+  float ang = seed + uStressTime * speed;
+  float slide = sin(uStressTime * 0.85 + seed) * uHalfSegment * 0.72;
+  vec2 axisC = vec2(slide, 0.0) + vec2(cos(ang), sin(ang)) * uRadius * (0.48 + 0.62 * uHeat);
+  vec2 c = uLateral > 0.5 ? vec2(-axisC.y, axisC.x) : axisC;
+  float pulse = 0.7 + 0.3 * sin(uStressTime * 6.2 + seed * 2.0);
+  float rad = uRadius * (0.06 + 0.36 * uHeat) * pulse;
+  return length(p - c) - rad;
+}
+
+// About -1..1. Extra creases in a loose skin, ridges left on the resting hull.
+float osmoticFold(vec2 axisP, float radius) {
+  float ang = atan(axisP.y, axisP.x);
+  float along = axisP.x / max(radius, 0.02);
+  float n = sin(ang * 5.0 + uSeed);
+  n += 0.7 * sin(ang * 8.5 + along * 3.6 + uSeed * 1.7);
+  n += 0.55 * sin(along * 6.5 - ang * 2.2 + uSeed * 3.1);
+  n += 0.4 * sin(ang * 12.0 + along * 4.8 + uSeed * 2.4);
+  n += 0.28 * sin(along * 10.0 + ang * 3.4 + uSeed * 5.2);
+  return n / 2.93;
+}
+
+float osmoticValley(vec2 axisP, float radius) {
+  float valley = clamp(-osmoticFold(axisP, radius), 0.0, 1.0);
+  return valley * sqrt(valley);
+}
+
+// Shrivel only cuts inward, so the outer hull stays put. Taut bows the flanks
+// and tucks the poles without lighting the body.
+float osmoticOffset(vec2 axisP, float radius, float halfSegment) {
+  float s = clamp(uOsmotic, -4.0, 1.0);
+  if (s < -0.001) return -radius * (-s) * 0.58 * osmoticValley(axisP, radius);
+  if (s <= 0.001) return 0.0;
+  float elongate = smoothstep(0.25, 1.15, halfSegment / max(radius, 1.0e-4));
+  float ang = atan(axisP.y, axisP.x);
+  float flank = -cos(ang * 2.0);
+  float shoulder = sin(ang * 2.0);
+  float bow = (flank + shoulder * shoulder * 0.45) * elongate;
+  // A quarter of full turgor keeps this pace. Full turgor pulses four times faster.
+  float rate = s * 4.0;
+  float pulse = sin(uStressTime * 3.4 * rate) * 0.65 + sin(uStressTime * 5.1 * rate + 1.7) * 0.35;
+  return radius * s * (0.16 * bow + 0.11 * pulse);
+}
+
+vec3 osmoticShade(vec3 color, vec2 p, vec3 n) {
+  float s = clamp(uOsmotic, -4.0, 1.0);
+  if (s < -0.001) {
+    float t = min(-s, 1.0);
+    float valley = osmoticValley(toAxis(p), max(uRadius, 1.0e-4));
+    color *= mix(1.0, 0.34, valley * t);
+    color = mix(color, color * vec3(0.84, 0.8, 0.74), t * 0.35);
+    return color;
+  }
+  if (s <= 0.001) return color;
+  vec3 H = normalize(vec3(0.28, 0.16, 1.0));
+  float ndh = clamp(dot(n, H), 0.0, 1.0);
+  float gleam = pow(ndh, 48.0);
+  float sheen = pow(ndh, 10.0);
+  float light = mix(0.45, 1.0, clamp(uLightIntensity, 0.0, 1.0));
+  float wink = 0.82 + 0.18 * sin(uStressTime * 3.4);
+  color += vec3(0.95, 0.93, 0.86) * (gleam * 0.9 + sheen * 0.12) * s * light * wink;
+  return color;
+}
+
 float plainCapsule(vec2 p, float halfSegment, float radius, float bend, float lateral) {
   vec2 axisP = lateral > 0.5 ? vec2(p.y, -p.x) : p;
   vec2 nearest;
@@ -325,14 +423,14 @@ float plainCapsule(vec2 p, float halfSegment, float radius, float bend, float la
     float ang = clamp(atan(fromCenter.x, fromCenter.y), -bend, bend);
     nearest = vec2(arcR * sin(ang), arcR * (cos(ang) - 1.0));
   }
-  return length(axisP - nearest) - radius * taperRadiusScale(axisP, halfSegment, radius, bend);
+  return length(axisP - nearest) - radius * taperRadiusScale(axisP, halfSegment, radius, bend) - heatOffset(axisP, radius, halfSegment) - osmoticOffset(axisP, radius, halfSegment);
 }
 
 float capsuleDistance(vec2 p) {
   vec2 axisP = toAxis(p);
   vec2 nearest = centerlineNearestAxis(axisP);
   float base = radiusAt(divisionAxial(axisP));
-  return length(axisP - nearest) - base * taperRadiusScale(axisP, uHalfSegment, uRadius, uBend);
+  return length(axisP - nearest) - base * taperRadiusScale(axisP, uHalfSegment, uRadius, uBend) - heatOffset(axisP, base, uHalfSegment) - osmoticOffset(axisP, base, uHalfSegment);
 }
 
 float daughterDistance(vec2 p) {
@@ -347,8 +445,13 @@ float daughterDistance(vec2 p) {
 
 float bodyDistance(vec2 p) {
   float parent = capsuleDistance(p);
-  if (uMorph <= 0.0) return parent;
-  return mix(parent, daughterDistance(p), uMorph);
+  float d = uMorph <= 0.0 ? parent : mix(parent, daughterDistance(p), uMorph);
+  if (uHeat < 0.12) return d;
+  d = min(d, heatBleb(p, 0.4, 1.7));
+  d = min(d, heatBleb(p, 2.2, -2.4));
+  d = min(d, heatBleb(p, 3.8, 2.9));
+  d = min(d, heatBleb(p, 5.1, -1.5));
+  return d;
 }
 
 vec3 surfaceNormal() {
@@ -564,13 +667,24 @@ vec3 envelopeColor(vec2 p, float row, bool nub) {
 void main() {
   float d = bodyDistance(vLocal);
   float pixel = max(uPixel, 1.0e-6);
+  float stress = clamp(uHeat, 0.0, 1.0);
+  float push = stress > 0.001 ? heatPush(vLocal) : 0.0;
+  float membraneScale = 1.0;
+  if (stress > 0.001) {
+    float thin = smoothstep(0.38, 0.86, push);
+    float bunch = smoothstep(0.52, 0.1, push);
+    membraneScale = mix(1.0, 0.05, thin * stress) * (1.0 + bunch * stress * 1.35);
+  }
+  float stressedPx = uMembranePx * membraneScale;
+  float spillReach = stress * stress * max(uRadius, pixel) * 0.55 * smoothstep(0.4, 0.85, push);
+  bool spill = uCapsuleThickness <= 0.0 && stress > 0.15 && d > 0.0 && d < spillReach;
   bool wall = uMembraneStyle > 0.5 && uMembraneStyle < 1.5;
   bool crystal = uMembraneStyle > 2.5;
   bool isoprenoid = uMembraneStyle > 1.5 && uMembraneStyle < 2.5;
   bool nub = false;
-  bool lip = wall && uCapsuleThickness <= 0.0 && d > 0.0 && d <= pixel;
+  bool lip = wall && uCapsuleThickness <= 0.0 && d > 0.0 && d <= pixel && push < 0.65;
   float depth = -d / pixel;
-  bool crease = wall && uMembranePx < 1.5 && d <= 0.0 && depth >= uMembranePx && depth < uMembranePx + 1.0;
+  bool crease = wall && stressedPx < 1.5 && d <= 0.0 && depth >= stressedPx && depth < stressedPx + 1.0 && push < 0.62;
   float edge = 0.0;
   bool nearRim = d <= pixel * 2.0 && d > -(uMembranePx + 1.5) * pixel;
   if (isoprenoid && uCapsuleThickness <= 0.0 && nearRim) edge = isoprenoidEdge(membraneColumn(vLocal));
@@ -581,7 +695,7 @@ void main() {
       || isoSupport(vLocal, d, step.yx, pixel)
       || isoSupport(vLocal, d, -step.yx, pixel);
   }
-  if (d > uCapsuleThickness && !nub && !lip) discard;
+  if (d > uCapsuleThickness && !nub && !lip && !spill) discard;
 
   vec3 n = surfaceNormal();
   vec3 bounce = pointReflect(n);
@@ -592,8 +706,17 @@ void main() {
     return;
   }
 
+  if (spill) {
+    float fade = 1.0 - d / max(spillReach, 1.0e-4);
+    vec3 goo = interiorBaseColor(bounce);
+    float boil = 0.5 + 0.5 * sin(vLocal.x * 46.0 + uStressTime * 13.0 + vLocal.y * 31.0);
+    goo = mix(goo, goo * vec3(1.2, 0.86, 0.62), boil * stress);
+    fragColor = vec4(goo, fade * fade);
+    return;
+  }
+
   float bandStart = edge < 0.0 ? 1.0 : 0.0;
-  float bandEnd = uMembranePx + bandStart;
+  float bandEnd = stressedPx + bandStart;
   float row = (nub || lip) ? -1.0 : floor(depth + 1.0e-4);
   if (edge < 0.0) row -= 1.0;
   // One interior-colored pixel through the middle of the crystal wall.
@@ -610,7 +733,7 @@ void main() {
       : (wall || crystal)
         ? diffuseRim(pigment, row, lip, n)
         : envelopeColor(vLocal, row, nub) + bounce * 0.4;
-    fragColor = vec4(ink, 1.0);
+    fragColor = vec4(osmoticShade(ink, vLocal, n), 1.0);
     return;
   }
 
@@ -635,9 +758,15 @@ void main() {
       }
     }
   }
+  if (stress > 0.001) {
+    float boil = sin(vLocal.x * 34.0 + uStressTime * 9.0) * sin(vLocal.y * 29.0 - uStressTime * 7.5 + uSeed);
+    color += vec3(0.07, 0.015, -0.04) * stress * boil;
+    color = mix(color, color * vec3(1.08, 0.94, 0.82), stress * 0.35 * (0.5 + 0.5 * boil));
+  }
   vec3 unlit = vec3(0.22) * uPigment;
   vec3 surface = mix(unlit, color, uLightIntensity);
-  fragColor = vec4(surface * (vec3(1.0) + bounce) + bounce * 0.22, 1.0);
+  vec3 lit = surface * (vec3(1.0) + bounce) + bounce * 0.22;
+  fragColor = vec4(osmoticShade(lit, vLocal, n), 1.0);
 }`;
 
 /** Crystal outline, compiled only when a crystal cell is drawn.
@@ -661,9 +790,13 @@ flat in float uCapsuleThickness;
 flat in float uAngle;
 flat in vec3 uMembraneColor;
 flat in float uPaletteIndex;
+flat in float uHeat;
+flat in float uOsmotic;
+flat in float uSeed;
 flat in vec4 uTaper;
 flat in vec3 uPigment;
 uniform float uPixel;
+uniform float uStressTime;
 uniform vec3 uLightDir;
 uniform float uLightIntensity;
 uniform vec4 uPalette0[5];
@@ -806,6 +939,37 @@ float crystalDistance(vec2 p, float H, float radius, float furrow, out vec2 outw
 #undef PUSH_CRYSTAL
 #undef PUSH_FLANK
 
+float osmoticFold(vec2 axisP, float radius) {
+  float ang = atan(axisP.y, axisP.x);
+  float along = axisP.x / max(radius, 0.02);
+  float n = sin(ang * 5.0 + uSeed);
+  n += 0.7 * sin(ang * 8.5 + along * 3.6 + uSeed * 1.7);
+  n += 0.55 * sin(along * 6.5 - ang * 2.2 + uSeed * 3.1);
+  n += 0.4 * sin(ang * 12.0 + along * 4.8 + uSeed * 2.4);
+  n += 0.28 * sin(along * 10.0 + ang * 3.4 + uSeed * 5.2);
+  return n / 2.93;
+}
+
+float osmoticValley(vec2 axisP, float radius) {
+  float valley = clamp(-osmoticFold(axisP, radius), 0.0, 1.0);
+  return valley * sqrt(valley);
+}
+
+float osmoticOffset(vec2 axisP, float radius, float halfSegment) {
+  float s = clamp(uOsmotic, -4.0, 1.0);
+  if (s < -0.001) return -radius * (-s) * 0.58 * osmoticValley(axisP, radius);
+  if (s <= 0.001) return 0.0;
+  float elongate = smoothstep(0.25, 1.15, halfSegment / max(radius, 1.0e-4));
+  float ang = atan(axisP.y, axisP.x);
+  float flank = -cos(ang * 2.0);
+  float shoulder = sin(ang * 2.0);
+  float bow = (flank + shoulder * shoulder * 0.45) * elongate;
+  // A quarter of full turgor keeps this pace. Full turgor pulses four times faster.
+  float rate = s * 4.0;
+  float pulse = sin(uStressTime * 3.4 * rate) * 0.65 + sin(uStressTime * 5.1 * rate + 1.7) * 0.35;
+  return radius * s * (0.16 * bow + 0.11 * pulse);
+}
+
 void main() {
   vec2 nAxis = vec2(0.0, 1.0);
   float d = crystalDistance(vLocal, uHalfSegment, uRadius, uFurrow, nAxis);
@@ -820,7 +984,21 @@ void main() {
     if (min(ld, rd) < d) nAxis = ld < rd ? ln : rn;
     d = mix(d, min(ld, rd), uMorph);
   }
-  if (d > uCapsuleThickness) discard;
+  if (uHeat > 0.001) {
+    float ang = atan(vLocal.y, vLocal.x);
+    float n = sin(ang * 5.0 + uStressTime * 6.0);
+    n += 0.65 * sin(ang * 11.0 - uStressTime * 9.0 + vLocal.x * 8.0);
+    n += 0.4 * sin(vLocal.y * 14.0 + uStressTime * 13.0);
+    d -= uHeat * uRadius * 0.24 * n;
+  }
+  if (abs(uOsmotic) > 0.001) {
+    vec2 axisP = uLateral > 0.5 ? vec2(vLocal.y, -vLocal.x) : vLocal;
+    d -= osmoticOffset(axisP, uRadius, uHalfSegment);
+  }
+  float stress = clamp(uHeat, 0.0, 1.0);
+  float spillReach = stress * stress * max(uRadius, uPixel) * 0.4;
+  bool spill = uCapsuleThickness <= 0.0 && stress > 0.2 && d > 0.0 && d < spillReach;
+  if (d > uCapsuleThickness && !spill) discard;
   vec2 nxy = uLateral > 0.5 ? vec2(-nAxis.y, nAxis.x) : nAxis;
   float c = cos(uAngle);
   float s = sin(uAngle);
@@ -840,7 +1018,25 @@ void main() {
   float light = clamp(uLightIntensity, 0.0, 1.0);
   color = mix(vec3(0.30) * uPigment, color, light);
   float pixel = max(uPixel, 1.0e-6);
-  if (d <= 0.0 && -d < uMembranePx * pixel) color = uMembraneColor * mix(0.22, 1.0, light);
+  if (spill) {
+    float fade = 1.0 - d / max(spillReach, 1.0e-4);
+    fragColor = vec4(color, fade * fade);
+    return;
+  }
+  if (d <= 0.0 && -d < uMembranePx * pixel * mix(1.0, 0.2, stress)) color = uMembraneColor * mix(0.22, 1.0, light);
+  if (uOsmotic < -0.001) {
+    vec2 axisP = uLateral > 0.5 ? vec2(vLocal.y, -vLocal.x) : vLocal;
+    float t = min(-uOsmotic, 1.0);
+    float valley = osmoticValley(axisP, max(uRadius, 1.0e-4));
+    color *= mix(1.0, 0.34, valley * t);
+    color = mix(color, color * vec3(0.84, 0.8, 0.74), t * 0.35);
+  } else if (uOsmotic > 0.001) {
+    vec3 H = normalize(vec3(0.28, 0.16, 1.0));
+    float ndh = clamp(dot(n, H), 0.0, 1.0);
+    float gleam = pow(ndh, 28.0);
+    float lightAmt = mix(0.45, 1.0, clamp(uLightIntensity, 0.0, 1.0));
+    color += vec3(0.95, 0.93, 0.86) * gleam * uOsmotic * lightAmt * 0.45;
+  }
   fragColor = vec4(color, 1.0);
 }
 `;
@@ -1099,11 +1295,103 @@ void main() {
   fragColor = vec4(mix(sharp.rgb, blur.rgb, smoothstep(0.0, 0.45, heat)), 1.0);
 }`;
 
+const DEBRIS_FLOATS = 16;
+
+const DEBRIS_VS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 iCenterAxis;
+layout(location = 2) in vec4 iExtentFill;
+layout(location = 3) in vec4 iRim;
+layout(location = 4) in vec4 iShape;
+uniform vec2 uHalfView;
+uniform vec2 uCamera;
+flat out vec3 vFill;
+flat out vec3 vRim;
+flat out float vSeed;
+flat out float vSides;
+out vec2 vLocal;
+void main() {
+  vec2 center = iCenterAxis.xy;
+  vec2 axis = iCenterAxis.zw;
+  vec2 local = aCorner * iExtentFill.xy;
+  vec2 world = center + vec2(axis.x * local.x - axis.y * local.y, axis.x * local.y + axis.y * local.x);
+  gl_Position = vec4((world - uCamera) / uHalfView, 0.0, 1.0);
+  vLocal = aCorner;
+  vFill = vec3(iExtentFill.z, iExtentFill.w, iRim.x);
+  vRim = iRim.yzw;
+  vSeed = iShape.x;
+  vSides = iShape.y;
+}`;
+
+const DEBRIS_FS = `#version 300 es
+precision highp float;
+flat in vec3 vFill;
+flat in vec3 vRim;
+flat in float vSeed;
+flat in float vSides;
+in vec2 vLocal;
+uniform float uAlpha;
+out vec4 fragColor;
+
+float shardHash(float n) {
+  return fract(sin(n * 127.1) * 43758.5453);
+}
+
+// Convex shard. Radii jitter so the same corner count still looks torn.
+float shardDistance(vec2 p) {
+  float n = clamp(floor(vSides + 0.5), 3.0, 6.0);
+  float sdf = -1.0e3;
+  for (int i = 0; i < 6; i++) {
+    if (float(i) >= n) break;
+    float k = float(i);
+    float wobble = (shardHash(vSeed + k * 2.17) - 0.5) * 0.28;
+    float a0 = (k + wobble) / n * 6.2831853;
+    float a1 = (k + 1.0 + (shardHash(vSeed + k * 2.17 + 4.2) - 0.5) * 0.28) / n * 6.2831853;
+    float r0 = mix(0.18, 1.0, shardHash(vSeed + k * 5.9));
+    float r1 = mix(0.18, 1.0, shardHash(vSeed + k * 5.9 + 1.3));
+    vec2 v0 = vec2(cos(a0), sin(a0)) * r0;
+    vec2 v1 = vec2(cos(a1), sin(a1)) * r1;
+    vec2 edge = v1 - v0;
+    float span = length(edge);
+    float side = edge.x * (p.y - v0.y) - edge.y * (p.x - v0.x);
+    sdf = max(sdf, -side / max(span, 1.0e-4));
+  }
+  return sdf;
+}
+
+void main() {
+  float d = shardDistance(vLocal);
+  if (d > 0.0) discard;
+  float lit = clamp(0.82 + 0.18 * (0.25 - vLocal.y), 0.0, 1.0);
+  vec3 color = mix(vFill * 0.88, vFill, lit);
+  vec3 edge = mix(vFill * 1.2, vRim, 0.2);
+  color = mix(color, edge, step(-0.14, d));
+  fragColor = vec4(color, uAlpha);
+}`;
+
+export type CellDebris = {
+  alpha: number;
+  scale: number;
+  pieces: readonly {
+    x: number;
+    y: number;
+    angle: number;
+    rx: number;
+    ry: number;
+    seed: number;
+    sides: number;
+    fill: readonly [number, number, number];
+    rim: readonly [number, number, number];
+  }[];
+};
+
 export class CellRenderer {
   private readonly gl: WebGL2RenderingContext;
   private readonly bodyProgram: WebGLProgram;
   private crystalProgram: WebGLProgram | null = null;
   private readonly lineProgram: WebGLProgram;
+  private readonly debrisProgram: WebGLProgram;
   private readonly gridProgram: WebGLProgram;
   private readonly temperatureProgram: WebGLProgram;
   private readonly concentrationProgram: WebGLProgram;
@@ -1122,6 +1410,9 @@ export class CellRenderer {
   private ribbonHalfView: [number, number] = [1, 1];
   private ribbonCamera: [number, number] = [0, 0];
   private instanceData = new Float32Array(BODY_FLOATS * 64);
+  private readonly debrisBuffer: WebGLBuffer;
+  private debrisData = new Float32Array(DEBRIS_FLOATS * 32);
+  private debrisCapacity = 32;
   private instanceCapacity = 64;
   private readonly instanceBuffer: WebGLBuffer;
   private readonly worldTarget: WebGLTexture;
@@ -1155,8 +1446,8 @@ export class CellRenderer {
   private logicalWidth = LOGICAL_WIDTH;
   private logicalHeight = LOGICAL_HEIGHT;
   private camera: [number, number] | null = null;
-  /** Title pan slides by display pixels instead of whole logical pixels. */
-  private smoothCamera = false;
+  /** Title pan uses the tighter follow. Presentation always scrolls by display pixels. */
+  private titleFollow = false;
   private zoom = ZOOM_MIN;
   private zoomFloor = ZOOM_MIN;
   private zoomFree = false;
@@ -1165,6 +1456,7 @@ export class CellRenderer {
   private paintHistory: Array<Array<() => boolean>> = [];
   private borderPlanted = false;
   private heatTime = 0;
+  private membraneTime = 0;
   private texelGrid = false;
   private fieldOverlay: FieldOverlay | null = null;
   private showNutrients = false;
@@ -1196,6 +1488,8 @@ export class CellRenderer {
     this.gl = gl;
     this.bodyProgram = link(gl, BODY_VS, BODY_FS);
     this.lineProgram = link(gl, LINE_VS, LINE_FS);
+    this.debrisProgram = link(gl, DEBRIS_VS, DEBRIS_FS);
+    this.debrisBuffer = gl.createBuffer()!;
     this.gridProgram = link(gl, GRID_VS, GRID_FS);
     this.temperatureProgram = link(gl, GRID_VS, TEMPERATURE_FS);
     this.concentrationProgram = link(gl, GRID_VS, CONCENTRATION_FS);
@@ -1344,12 +1638,11 @@ export class CellRenderer {
   }
 
   /**
-   * When set, the world stays on the logical pixel grid and the presented
-   * picture scrolls by whole display pixels. A slow pan then does not sit
-   * still and lurch by the integer upscale.
+   * Title glance uses a tighter follow so menu swimmers stay where the pan
+   * put them. Gameplay keeps the slower trail behind the cell.
    */
-  setSmoothCamera(enabled: boolean): void {
-    this.smoothCamera = enabled;
+  setTitleFollow(enabled: boolean): void {
+    this.titleFollow = enabled;
   }
 
   zoomBy(deltaY: number, deltaMode: number): void {
@@ -1405,6 +1698,7 @@ export class CellRenderer {
     intensity: number,
     camera: [number, number],
     pilusFragments: readonly PilusFragmentSnapshot[] = [],
+    debris: CellDebris | null = null,
   ): void {
     const gl = this.gl;
     const ordered = [...cells].sort((a, b) => a.y - b.y || a.id - b.id);
@@ -1416,13 +1710,11 @@ export class CellRenderer {
     // Framebuffer pixels, so a thickness of N stays N pixels as the view zooms.
     const pixelWorld = (halfView[0] * 2) / Math.max(this.logicalWidth, 1);
     const filamentHalf = 0.5 / view.pixels_per_unit;
-    const pixel = view.pixels_per_unit;
     const drawnPixelsPerUnit = this.logicalWidth / (halfView[0] * 2);
     const followed = this.followCamera(camera, dt);
-    const grid = this.smoothCamera ? drawnPixelsPerUnit : pixel;
     const snapped: [number, number] = [
-      Math.round(followed[0] * grid) / grid,
-      Math.round(followed[1] * grid) / grid,
+      Math.round(followed[0] * drawnPixelsPerUnit) / drawnPixelsPerUnit,
+      Math.round(followed[1] * drawnPixelsPerUnit) / drawnPixelsPerUnit,
     ];
     const presented = this.presentCamera(followed, snapped, drawnPixelsPerUnit);
     this.frame = { halfView, camera: presented.camera };
@@ -1484,8 +1776,12 @@ export class CellRenderer {
       this.appendPili(cell, halfView, snapped, filamentHalf);
     }
     this.flushRibbon();
+    this.membraneTime = (this.membraneTime + Math.min(dt, 0.05)) % 1000;
     this.drawBodies(ordered, halfView, snapped, pixelWorld, light, intensity, lights);
     gl.disable(gl.DEPTH_TEST);
+    if (debris && debris.alpha > 0.004 && debris.scale > 0 && debris.pieces.length > 0) {
+      this.drawDebris(debris, halfView, snapped);
+    }
 
     this.bubbles.sync(this.terrain.bubblePoints(), this.terrain.bubbleGeneration());
     this.bubbles.update(dt);
@@ -1534,7 +1830,7 @@ export class CellRenderer {
     snapped: [number, number],
     pixelsPerUnit: number,
   ): { scroll: [number, number]; camera: [number, number] } {
-    if (!this.smoothCamera || pixelsPerUnit <= 0 || this.width <= 0 || this.height <= 0) {
+    if (pixelsPerUnit <= 0 || this.width <= 0 || this.height <= 0) {
       return { scroll: [0, 0], camera: snapped };
     }
     const scaleX = this.width / Math.max(this.logicalWidth, 1);
@@ -1790,7 +2086,7 @@ export class CellRenderer {
     }
     // Exponential ease: frame-rate independent, and the residual gap closes
     // on the same curve no matter the frame time.
-    const rate = this.smoothCamera ? FOLLOW_RATE_TITLE : FOLLOW_RATE_GAMEPLAY;
+    const rate = this.titleFollow ? FOLLOW_RATE_TITLE : FOLLOW_RATE_GAMEPLAY;
     const blend = 1 - Math.exp(-dt * rate);
     this.camera[0] += (target[0] - this.camera[0]) * blend;
     this.camera[1] += (target[1] - this.camera[1]) * blend;
@@ -2374,6 +2670,7 @@ export class CellRenderer {
     gl.uniform2f(uniform(gl, program, "uHalfView"), halfView[0], halfView[1]);
     gl.uniform2f(uniform(gl, program, "uCamera"), camera[0], camera[1]);
     gl.uniform1f(uniform(gl, program, "uPixel"), pixelWorld);
+    gl.uniform1f(uniform(gl, program, "uStressTime"), this.membraneTime);
     gl.uniform3f(uniform(gl, program, "uLightDir"), light[0], light[1], light[2]);
     gl.uniform1f(uniform(gl, program, "uLightIntensity"), intensity);
     gl.uniform1i(uniform(gl, program, "uPointCount"), lights.count);
@@ -2407,6 +2704,65 @@ export class CellRenderer {
     gl.disable(gl.BLEND);
   }
 
+  private drawDebris(debris: CellDebris, halfView: [number, number], camera: [number, number]): void {
+    const count = debris.pieces.length;
+    if (count > this.debrisCapacity) {
+      let cap = this.debrisCapacity;
+      while (cap < count) cap *= 2;
+      this.debrisData = new Float32Array(cap * DEBRIS_FLOATS);
+      this.debrisCapacity = cap;
+    }
+    const data = this.debrisData;
+    const scale = debris.scale;
+    for (let i = 0; i < count; i += 1) {
+      const piece = debris.pieces[i];
+      if (!piece) continue;
+      const o = i * DEBRIS_FLOATS;
+      data[o] = piece.x;
+      data[o + 1] = piece.y;
+      data[o + 2] = Math.cos(piece.angle);
+      data[o + 3] = Math.sin(piece.angle);
+      data[o + 4] = piece.rx * scale;
+      data[o + 5] = piece.ry * scale;
+      data[o + 6] = piece.fill[0];
+      data[o + 7] = piece.fill[1];
+      data[o + 8] = piece.fill[2];
+      data[o + 9] = piece.rim[0];
+      data[o + 10] = piece.rim[1];
+      data[o + 11] = piece.rim[2];
+      data[o + 12] = piece.seed;
+      data[o + 13] = piece.sides;
+      data[o + 14] = 0;
+      data[o + 15] = 0;
+    }
+    const gl = this.gl;
+    const program = this.debrisProgram;
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(program);
+    gl.uniform2f(uniform(gl, program, "uHalfView"), halfView[0], halfView[1]);
+    gl.uniform2f(uniform(gl, program, "uCamera"), camera[0], camera[1]);
+    gl.uniform1f(uniform(gl, program, "uAlpha"), debris.alpha);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.debrisBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, count * DEBRIS_FLOATS), gl.DYNAMIC_DRAW);
+    const stride = DEBRIS_FLOATS * 4;
+    for (let loc = 1; loc <= 4; loc += 1) {
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, stride, (loc - 1) * 16);
+      gl.vertexAttribDivisor(loc, 1);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribDivisor(0, 0);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
+    for (let loc = 1; loc <= 4; loc += 1) {
+      gl.vertexAttribDivisor(loc, 0);
+      gl.disableVertexAttribArray(loc);
+    }
+    gl.disable(gl.BLEND);
+  }
+
   private writeBody(index: number, cell: CellSnapshot, pixelWorld: number): void {
     const shape = orientedCapsule(cell.length, cell.width);
     const bend = cell.bend ?? 0;
@@ -2415,11 +2771,16 @@ export class CellRenderer {
     const membranePx = cell.membranePx ?? this.membranePx;
     const membraneStyle = cell.membraneStyle ?? this.membraneStyle;
     const membraneColor = cell.membraneColor ?? this.membraneColor;
+    // Slider 1 draws the disturbance that used to sit at 0.5.
+    const heat = Math.min(1, Math.max(0, cell.heatStress ?? 0)) * 0.5;
+    const osmotic = Math.min(1, Math.max(-4, cell.osmoticStress ?? 0));
     const cellMembrane = membranePx * pixelWorld;
     const fringePx = membraneStyle === 2 ? 2 : membraneStyle === 1 ? 1 : 0;
     const skirt = cellMembrane + fringePx * pixelWorld;
     const crystalPad = membraneStyle === 3 ? shape.radius * 0.15 : 0;
-    const pad = cell.capsule + skirt + 1 / 32 + divisionPad + crystalPad;
+    const heatPad = heat * (shape.radius + shape.halfSegment) * 0.9;
+    const osmoticPad = Math.max(0, osmotic) * shape.radius * 0.36;
+    const pad = cell.capsule + skirt + 1 / 32 + divisionPad + crystalPad + heatPad + osmoticPad;
     const axialReach = shape.halfSegment + shape.radius;
     const waist = Math.max(Math.min(shape.radius * 0.62, axialReach * 0.22), 1 / 32);
     const data = this.instanceData;
@@ -2450,6 +2811,8 @@ export class CellRenderer {
     data[o + 23] = membraneColor[2];
     data[o + 24] = cell.palette;
     data[o + 25] = this.cellDepth(cell.y);
+    data[o + 26] = heat;
+    data[o + 27] = osmotic;
     const [polar, antipolar, lateral, antilateral] = effectiveTaperDegrees(cell.taper);
     data[o + 28] = polar;
     data[o + 29] = antipolar;

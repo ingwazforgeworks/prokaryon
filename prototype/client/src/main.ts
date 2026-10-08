@@ -1,9 +1,18 @@
+import {
+  apoptosisSuccessor,
+  bodyCollapse,
+  burstAlpha,
+  burstSettled,
+  spawnBurst,
+  stepBurst,
+  type ApoptosisBurst,
+} from "./apoptosis";
 import { buoyancyExpressionLevel, buoyancyVelocity, genomeCanDriveBuoyancy, stepBuoyancyVelocity } from "./buoyancy";
 import { bootFinish, bootMark } from "./boot";
 import { initCodex } from "./codex";
 import { initDock, onEnvironmentVisible } from "./dock";
-import { createEnvironmentProbe } from "./environmentProbe";
-import { createInspect, playerCellTarget } from "./inspect";
+import { createEnvironmentProbe, formatNutrient } from "./environmentProbe";
+import { createInspect, playerCellTarget, setPlayerCellLines } from "./inspect";
 import { initGenomeEditor } from "./genomeEditor";
 import { initExpression, syncExpressionCell } from "./expression";
 import { initGenomeViewer } from "./genomeViewer";
@@ -32,6 +41,10 @@ import {
   type CiliumMotorDrive,
 } from "./ciliaDistribution";
 import { genomeCanDriveLubricin, lubricinExpressionLevel } from "./lubricin";
+import { osmolynReceptorExpressionLevel, sensedOsmolyn } from "./osmolynSense";
+import { osmolynDamageScale, osmoprotectinExpressionLevel } from "./osmoprotectin";
+import { aquaporinChannelOpen, aquaporinExpressionLevel } from "./aquaporin";
+import { stepOsmoticStress } from "./osmoticStress";
 import {
   cytosolicMorphologyLevel,
   genomeCanDriveCytosolicMorphology,
@@ -45,14 +58,30 @@ import { loadCellState, saveCellState } from "./debugCellState";
 import { initTechTree } from "./techTree";
 import { initPlayer } from "./player";
 import { initResourceBar } from "./resourceBar";
-import { cellResources, mutationPointCount, onResources, setMutationPoints, setPopulation, updateResource } from "./resources";
-import { initTitleScreen, titleScreenOpen } from "./menu";
+import {
+  MUTATION_POINTS_PER_DIVISION,
+  createCellStore,
+  focusCellStore,
+  focusedCellStore,
+  grantMutationPoints,
+  mutationPointCount,
+  onResources,
+  setMutationPoints,
+  setPopulation,
+  STARTING_ATP,
+  splitCellStore,
+  storedResource,
+  updateCellResource,
+  type CellStore,
+} from "./resources";
+import { initTitleScreen, returnToMainMenu, titleScreenOpen } from "./menu";
+import { ownedSpecies } from "./species";
 import { initSettings } from "./settingsPanel";
 import { bindButtonSounds, playCue } from "./uiSound";
 import { LightDebug } from "./debug";
 import { columnAttenuation, formatTimeOfDay, SUN_HOUR_SECONDS, sunCycle } from "./light";
 import { copyFluor, copyPigment, emptyFluor, emptyPigment, fluorEmission, pigmentTint, type FluorLevels, type PigmentLevels } from "./pigment";
-import { CellRenderer, INTERIOR_BASE_COLOR, ISOPRENOID_SHADE, type FieldOverlay } from "./renderer";
+import { CellRenderer, INTERIOR_BASE_COLOR, ISOPRENOID_SHADE, type CellDebris, type FieldOverlay } from "./renderer";
 import { SimulationSession } from "./session";
 import { filamentsForFlagellin } from "./flagellum";
 import { acceptedVelocity, collisionSpin, flagellarPulseLabel, independentPulseState, independentSwitchState, randomPulseScale, RELEASE_RECOIL, retainSwimVelocity, stepBeatSwitch, stepFlagellarPulse, stepFlagellarSwitch, stepSwim, stepTumble, type FlagellarPulseState, type FlagellarSwitchState, type SwimState } from "./swim";
@@ -88,6 +117,8 @@ const pose = { x: 0, y: -450, angle: 0, length: BODY_WIDTH * 2 };
 let elongation = 0.25;
 let girth = 0;
 let crescent = 0;
+let heatStress = 0;
+let osmoticStress = 0;
 let buoyin = 0;
 let ballastin = 0;
 // Actual vertical drift velocity. It accelerates toward the buoyancy target
@@ -176,6 +207,10 @@ type SimulatedCell = {
   piliPresence: number;
   piliFade: PresenceFade | null;
   division: DivisionState | null;
+  /** This cell's inventory. Other cells do not draw from it. */
+  store: CellStore;
+  /** This cell's osmotic stress, from -1 shriveled to +1 taut. */
+  osmoticStress: number;
 };
 /** Motility sliders. The controlled cell reads the live globals. A menu swimmer keeps its own. */
 type CellDrive = {
@@ -223,6 +258,9 @@ type MenuSwimmer = {
 };
 const siblings: SimulatedCell[] = [];
 let division: DivisionState | null = null;
+let apoptosis: ApoptosisBurst | null = null;
+/** Inventory of the cell the camera and resource bar are following. */
+let controlledStore: CellStore = focusedCellStore();
 const held = new Set<string>();
 
 const positionQuery = document.querySelector<HTMLElement>("#position");
@@ -261,6 +299,7 @@ const geneticsTab = document.querySelector<HTMLButtonElement>("#debug-tab-geneti
 const motilityTab = document.querySelector<HTMLButtonElement>("#debug-tab-motility");
 const morphologyTab = document.querySelector<HTMLButtonElement>("#debug-tab-morphology");
 const pigmentTab = document.querySelector<HTMLButtonElement>("#debug-tab-pigment");
+const homeostasisTab = document.querySelector<HTMLButtonElement>("#debug-tab-homeostasis");
 const environmentPanel = document.querySelector<HTMLElement>("#debug-environment");
 const cellPanel = document.querySelector<HTMLElement>("#debug-cell");
 const geneticsPanel = document.querySelector<HTMLElement>("#debug-genetics");
@@ -306,6 +345,8 @@ loadCellStateButton.addEventListener("click", () => {
 const motilityPanel = document.querySelector<HTMLElement>("#debug-motility");
 const morphologyPanel = document.querySelector<HTMLElement>("#debug-morphology");
 const pigmentPanel = document.querySelector<HTMLElement>("#debug-pigment");
+const homeostasisPanel = document.querySelector<HTMLElement>("#debug-homeostasis");
+const apoptosisButton = document.querySelector<HTMLButtonElement>("#cell-apoptosis");
 const carotinSlider = document.querySelector<HTMLInputElement>("#cell-carotin");
 const carotinReadout = document.querySelector<HTMLElement>("#cell-carotin-value");
 const rhodinSlider = document.querySelector<HTMLInputElement>("#cell-rhodin");
@@ -328,6 +369,10 @@ const girthSlider = document.querySelector<HTMLInputElement>("#cell-girth");
 const girthReadout = document.querySelector<HTMLElement>("#cell-girth-value");
 const crescentSlider = document.querySelector<HTMLInputElement>("#cell-crescent");
 const crescentReadout = document.querySelector<HTMLElement>("#cell-crescent-value");
+const osmoticStressSlider = document.querySelector<HTMLInputElement>("#cell-osmotic-stress");
+const osmoticStressReadout = document.querySelector<HTMLElement>("#cell-osmotic-stress-value");
+const heatStressSlider = document.querySelector<HTMLInputElement>("#cell-heat-stress");
+const heatStressReadout = document.querySelector<HTMLElement>("#cell-heat-stress-value");
 const taperPolarButton = document.querySelector<HTMLButtonElement>("#taper-polar");
 const taperAntipolarButton = document.querySelector<HTMLButtonElement>("#taper-antipolar");
 const taperLateralButton = document.querySelector<HTMLButtonElement>("#taper-lateral");
@@ -455,6 +500,9 @@ if (
   !motilityPanel ||
   !morphologyPanel ||
   !pigmentPanel ||
+  !homeostasisTab ||
+  !homeostasisPanel ||
+  !apoptosisButton ||
   !carotinSlider ||
   !carotinReadout ||
   !rhodinSlider ||
@@ -477,6 +525,10 @@ if (
   !girthReadout ||
   !crescentSlider ||
   !crescentReadout ||
+  !osmoticStressSlider ||
+  !osmoticStressReadout ||
+  !heatStressSlider ||
+  !heatStressReadout ||
   !taperPolarButton ||
   !taperAntipolarButton ||
   !taperLateralButton ||
@@ -660,21 +712,26 @@ geneticsTab.addEventListener("click", () => {
   showDebugTab(geneticsPanel.hidden ? "genetics" : null);
 });
 
-const showCellSubtab = (tab: "motility" | "morphology" | "pigment"): void => {
+const showCellSubtab = (tab: "motility" | "morphology" | "pigment" | "homeostasis"): void => {
   motilityPanel.hidden = tab !== "motility";
   morphologyPanel.hidden = tab !== "morphology";
   pigmentPanel.hidden = tab !== "pigment";
+  homeostasisPanel.hidden = tab !== "homeostasis";
   motilityTab.classList.toggle("active", tab === "motility");
   motilityTab.setAttribute("aria-pressed", String(tab === "motility"));
   morphologyTab.classList.toggle("active", tab === "morphology");
   morphologyTab.setAttribute("aria-pressed", String(tab === "morphology"));
   pigmentTab.classList.toggle("active", tab === "pigment");
   pigmentTab.setAttribute("aria-pressed", String(tab === "pigment"));
+  homeostasisTab.classList.toggle("active", tab === "homeostasis");
+  homeostasisTab.setAttribute("aria-pressed", String(tab === "homeostasis"));
 };
 
 motilityTab.addEventListener("click", () => showCellSubtab("motility"));
 morphologyTab.addEventListener("click", () => showCellSubtab("morphology"));
 pigmentTab.addEventListener("click", () => showCellSubtab("pigment"));
+homeostasisTab.addEventListener("click", () => showCellSubtab("homeostasis"));
+apoptosisButton.addEventListener("click", () => beginApoptosis());
 
 const pigmentControls = {
   carotin: { input: carotinSlider, readout: carotinReadout },
@@ -1223,7 +1280,9 @@ function pushMorphology(): void {
   const glow = copyFluor(fluor);
   for (const cell of siblings) {
     if (cell.division) continue;
-    cell.form = { ...playerForm() };
+    // Size is each cell's own growth. Apply-all shares shape, not scale.
+    const scale = cell.form.scale;
+    cell.form = { ...playerForm(), scale };
     cell.membrane = look;
     cell.pigment = levels;
     cell.fluor = glow;
@@ -1248,6 +1307,18 @@ crescentSlider.addEventListener("input", () => {
   crescent = clamp(Number(crescentSlider.value), 0, 1);
   crescentReadout.textContent = crescent.toFixed(2);
   pushMorphology();
+});
+
+osmoticStressSlider.addEventListener("input", () => {
+  osmoticStress = clamp(Number(osmoticStressSlider.value), -1, 1);
+  osmoticStressReadout.textContent = osmoticStress.toFixed(2);
+});
+osmoticStressSlider.disabled = true;
+osmoticStressSlider.title = "Driven by the osmolyn in the water around the cell";
+
+heatStressSlider.addEventListener("input", () => {
+  heatStress = clamp(Number(heatStressSlider.value), 0, 1);
+  heatStressReadout.textContent = heatStress.toFixed(2);
 });
 
 const taperButtons = [
@@ -1399,25 +1470,26 @@ const applyGenomeExpression = (timeSeconds: number, dtSeconds: number): void => 
   genomeBeatWhipping = undulation > 0.02;
 };
 // Genome respiration: a transmembrane Ferron Permease (FERP) or Sulfex
-// Permease (SLFP) imports dissolved fuel, and the matching transmembrane
+// Permease (SLFP) imports dissolved fuel, and the matching cytosolic
 // reductase (FERR or SLFR) burns the intracellular pool for a modest ATP
 // yield. Import tracks the permease expression level, the local
-// concentration, and the room left in the pool; the burn tracks the reductase
-// expression level and stops at an empty fuel pool or a full ATP pool, so
-// fuel is never wasted. The fuel readout reports the net rate and the ATP
-// readout the combined production of both reductases.
+// concentration, and the room left in the pool. The burn tracks reductase
+// expression and how much fuel is actually stored, so an empty pool yields no
+// ATP and a trickle of import fills a reserve instead of passing straight
+// through. A full ATP pool stops the burn. The fuel readout reports the net
+// rate and the ATP readout the combined production of both reductases.
 const FUEL_GENES = [
   { permeaseGeneId: "FERP", reductaseGeneId: "FERR", resourceId: "ferron", kind: "ferron" },
   { permeaseGeneId: "SLFP", reductaseGeneId: "SLFR", resourceId: "sulfex", kind: "sulfex" },
 ] as const;
-const applyGenomeRespiration = (timeSeconds: number, x: number, y: number, dt: number): void => {
-  const atp = cellResources().find((resource) => resource.id === "atp");
+const applyGenomeRespiration = (store: CellStore, timeSeconds: number, x: number, y: number, dt: number): void => {
+  const atp = storedResource(store, "atp");
   if (!atp) return;
   const constructs = getGenome();
   let atpAmount = atp.amount;
   let atpRate = 0;
   for (const fuel of FUEL_GENES) {
-    const held = cellResources().find((resource) => resource.id === fuel.resourceId);
+    const held = storedResource(store, fuel.resourceId);
     if (!held) continue;
     const imported = stepPermeaseUptake(
       held.amount,
@@ -1433,48 +1505,75 @@ const applyGenomeRespiration = (timeSeconds: number, x: number, y: number, dt: n
       reductaseExpressionLevel(constructs, fuel.reductaseGeneId, timeSeconds),
       dt,
     );
-    updateResource(fuel.resourceId, { amount: burned.fuel, rate: imported.rate - burned.fuelRate });
+    updateCellResource(store, fuel.resourceId, { amount: burned.fuel, rate: imported.rate - burned.fuelRate });
     atpAmount = burned.atp;
     atpRate += burned.atpRate;
     if (imported.depletion > 0) renderer.nutrientTake(fuel.kind, x, y, imported.depletion);
   }
-  updateResource("atp", { amount: atpAmount, rate: atpRate });
+  updateCellResource(store, "atp", { amount: atpAmount, rate: atpRate });
 };
 
 // Genome upkeep: every committed construct drains ATP at the upkeep the genome
 // viewer displays for it, scaling with its expression tile. A starter
-// metabolizer draws about 3 ATP/s, so the 1000 ATP a new cell starts with
-// lasts around five minutes without production. The pool floors at zero;
-// what happens at zero is later work.
-const applyGenomeUpkeep = (dt: number): void => {
-  const atp = cellResources().find((resource) => resource.id === "atp");
+// metabolizer draws about 0.06 ATP/s, so the 1000 ATP a new cell starts with
+// lasts around four and a half hours without production. The pool floors at
+// zero; what happens at zero is later work. Each cell pays from its own ATP.
+const applyGenomeUpkeep = (store: CellStore, dt: number): void => {
+  const atp = storedResource(store, "atp");
   if (!atp) return;
   const drain = genomeAtpUpkeep(getGenome());
   if (drain <= 0) return;
-  updateResource("atp", { amount: Math.max(0, atp.amount - drain * dt), rate: atp.rate - drain });
+  updateCellResource(store, "atp", { amount: Math.max(0, atp.amount - drain * dt), rate: atp.rate - drain });
 };
 
-// Genome reproduction: expressed Anabolase grows the controlled cell toward
-// the size cap — the doubling time tracks the expression level — and expressed
-// Cyclin commits the cell to division once it has reached the minimum division
-// size (1.0, twice the 0.5 floor, so both halved daughters stay legal). Growth
-// pauses mid-division, and without Cyclin the cell simply grows past 1.0 until
-// the player divides by hand.
+const stepCellEconomy = (store: CellStore, x: number, y: number, timeSeconds: number, dt: number): void => {
+  applyGenomeRespiration(store, timeSeconds, x, y, dt);
+  applyGenomeUpkeep(store, dt);
+};
+
+function osmoticStressAt(stress: number, x: number, y: number, timeSeconds: number, dt: number): number {
+  const constructs = getGenome();
+  return stepOsmoticStress(
+    stress,
+    renderer.nutrientRead("osmolyn", x, y),
+    osmoprotectinExpressionLevel(constructs, timeSeconds),
+    aquaporinExpressionLevel(constructs, timeSeconds),
+    dt,
+  );
+}
+
+function showOsmoticStress(): void {
+  if (!osmoticStressSlider || !osmoticStressReadout) return;
+  osmoticStressSlider.value = String(osmoticStress);
+  osmoticStressReadout.textContent = osmoticStress.toFixed(2);
+}
+
+function grownScale(scale: number, dividing: boolean, expression: number, dt: number): number {
+  if (dividing) return scale;
+  return stepAnabolaseGrowth(scale, expression, dt, SIZE_MAX);
+}
+
+// Genome reproduction runs on every cell of the species. Anabolase grows that
+// cell's own size — the doubling time tracks the expression level — and Cyclin
+// commits it once it has reached the minimum division size (1.0, twice the
+// 0.5 floor, so both halved daughters stay legal). Each cell keeps its own
+// size and its own division. Growth pauses mid-division, and without Cyclin a
+// cell simply grows past 1.0 until it is divided by hand.
 const applyGenomeReproduction = (timeSeconds: number, dt: number): void => {
   const constructs = getGenome();
+  const anabolase = anabolaseExpressionLevel(constructs, timeSeconds);
+  const cyclin = cyclinExpressionLevel(constructs, timeSeconds);
   const dividing = division !== null;
-  if (!dividing) {
-    const grown = stepAnabolaseGrowth(cellScale, anabolaseExpressionLevel(constructs, timeSeconds), dt, SIZE_MAX);
-    if (grown !== cellScale) {
-      cellScale = grown;
-      renderer.setCellScale(cellScale);
-      pose.length = cellLength();
-      sizeSlider.value = String(cellScale);
-      sizeReadout.textContent = `${cellScale.toFixed(2)}×`;
-      refreshDivideControls();
-    }
+  const grown = grownScale(cellScale, dividing, anabolase, dt);
+  if (grown !== cellScale) {
+    cellScale = grown;
+    renderer.setCellScale(cellScale);
+    pose.length = cellLength();
+    sizeSlider.value = String(cellScale);
+    sizeReadout.textContent = `${cellScale.toFixed(2)}×`;
+    refreshDivideControls();
   }
-  if (cyclinTriggersDivision(cyclinExpressionLevel(constructs, timeSeconds), cellScale, dividing, DIVISION_MIN_SCALE)) {
+  if (cyclinTriggersDivision(cyclin, cellScale, dividing, DIVISION_MIN_SCALE)) {
     const committed = commitDivision(playerForm(), controlledCiliaPresence, controlledPiliPresence);
     division = committed.division;
     if (committed.ciliaFade) controlledCiliaFade = committed.ciliaFade;
@@ -1482,6 +1581,22 @@ const applyGenomeReproduction = (timeSeconds: number, dt: number): void => {
     setShapeEnabled(false);
     refreshDivideControls();
   }
+  let siblingCommitted = false;
+  for (const cell of siblings) {
+    const cellDividing = cell.division !== null;
+    const nextScale = grownScale(cell.form.scale, cellDividing, anabolase, dt);
+    if (nextScale !== cell.form.scale) {
+      cell.form.scale = nextScale;
+      cell.pose.length = cellDimensions(nextScale, cell.form.elongation, cell.form.girth, cell.form.crescent).length;
+    }
+    if (!cyclinTriggersDivision(cyclin, cell.form.scale, cellDividing, DIVISION_MIN_SCALE)) continue;
+    const committed = commitDivision(cell.form, cell.ciliaPresence, cell.piliPresence);
+    cell.division = committed.division;
+    if (committed.ciliaFade) cell.ciliaFade = committed.ciliaFade;
+    if (committed.piliFade) cell.piliFade = committed.piliFade;
+    siblingCommitted = true;
+  }
+  if (siblingCommitted) refreshDivideControls();
 };
 let genomeDrivesFlagellinState = false;
 const syncGenomeFlagellin = (): void => {
@@ -2134,17 +2249,6 @@ clearButton.addEventListener("click", () => {
   refreshSpecies();
 });
 
-const GENUS_STEMS = ["halo", "thermo", "thio", "nitro", "aqua", "geo", "rhodo", "ferro", "photo", "pseudo", "cyano", "alkali", "baro", "cryo", "acido", "methano", "desulfo"];
-const GENUS_ENDINGS = ["monas", "bacter", "coccus", "vibrio", "bacillus", "plasma", "spira"];
-const SPECIES_EPITHETS = ["marinus", "thermalis", "profundus", "halophilus", "aquaticus", "pelagicus", "abyssalis", "sulfureus", "venticola", "salinus", "littoralis", "phototrophus"];
-
-function randomSpeciesName(): string {
-  const pick = (list: readonly string[]): string => list[Math.floor(Math.random() * list.length)] ?? list[0] ?? "";
-  const genus = `${pick(GENUS_STEMS)}${pick(GENUS_ENDINGS)}`;
-  return `${genus.charAt(0).toUpperCase()}${genus.slice(1)} ${pick(SPECIES_EPITHETS)}`;
-}
-
-const ownedSpecies = randomSpeciesName();
 speciesName.textContent = ownedSpecies;
 speciesName.title = ownedSpecies;
 
@@ -2165,6 +2269,7 @@ applyAllButton.addEventListener("click", () => {
 });
 
 divideButton.addEventListener("click", () => {
+  if (apoptosis) return;
   let started = false;
   if (cellCanDivide(cellScale, division !== null)) {
     const committed = commitDivision(playerForm(), controlledCiliaPresence, controlledPiliPresence);
@@ -2442,8 +2547,10 @@ const TITLE_X0 = -78;
 const TITLE_SPAN = 168;
 const TITLE_PAN_SECONDS = 340;
 const MENU_TYPE_COUNT = 8;
-const MENU_COPIES_MIN = 2;
-const MENU_COPIES_MAX = 16;
+const MENU_COPIES_MIN = 4;
+const MENU_COPIES_MAX = 32;
+/** How many view-heights below the title camera a menu swimmer may travel. */
+const MENU_FLOOR_BELOW_CAMERA = 1.5;
 const titleStill = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const menuSwimmers: MenuSwimmer[] = [];
 
@@ -2457,7 +2564,7 @@ function titleGlance(now: number, pixelsPerUnit: number): [number, number] {
 
 type MenuBand = { x0: number; x1: number; y0: number; y1: number };
 
-/** The water the title camera actually sweeps, plus a little room at the sides. */
+/** The title pan, with room at the sides. The floor sits well below the camera. */
 function menuBand(pixelsPerUnit: number): MenuBand {
   const [halfX, halfY] = renderer.viewExtent(pixelsPerUnit);
   const y = TITLE_FLOOR + halfY * 0.42;
@@ -2466,7 +2573,7 @@ function menuBand(pixelsPerUnit: number): MenuBand {
   return {
     x0: TITLE_X0 - padX,
     x1: TITLE_X0 + TITLE_SPAN + padX,
-    y0: Math.max(TITLE_FLOOR + 0.35, y - halfY + padY),
+    y0: y - halfY * 2 * MENU_FLOOR_BELOW_CAMERA,
     y1: y + halfY - padY,
   };
 }
@@ -2862,20 +2969,33 @@ function frame(now: number): void {
     } else bootMark("session", 0.4);
   }
   const playing = !titleScreenOpen();
+  if (playing && apoptosis) stepBurst(apoptosis, dt);
   if (playing) {
     stepSurfaceFades(now);
-    stepControlled(dt);
+    if (!apoptosis) stepControlled(dt);
     for (const sibling of siblings) stepSibling(sibling, dt);
   }
+  if (apoptosis) division = null;
   const posed = advanceDivision(now);
   if (playing) {
     advanceSiblingDivisions(now);
-    separateCells(now, posed);
+    if (!apoptosis) separateCells(now, posed);
   }
+  if (playing && apoptosis && burstSettled(apoptosis.age)) finishApoptosis();
   const cell = controlledCell(posed);
-  if (playing) applyGenomeRespiration(now / 1000, cell.x, cell.y, dt);
-  if (playing) applyGenomeUpkeep(dt);
-  if (playing) applyGenomeReproduction(now / 1000, dt);
+  if (playing) {
+    const timeSeconds = now / 1000;
+    if (!apoptosis) stepCellEconomy(controlledStore, cell.x, cell.y, timeSeconds, dt);
+    if (!apoptosis) {
+      osmoticStress = osmoticStressAt(osmoticStress, cell.x, cell.y, timeSeconds, dt);
+      showOsmoticStress();
+    }
+    for (const sibling of siblings) {
+      stepCellEconomy(sibling.store, sibling.pose.x, sibling.pose.y, timeSeconds, dt);
+      sibling.osmoticStress = osmoticStressAt(sibling.osmoticStress, sibling.pose.x, sibling.pose.y, timeSeconds, dt);
+    }
+    if (!apoptosis) applyGenomeReproduction(timeSeconds, dt);
+  }
   const title = titleScreenOpen();
   if (title) {
     if (pilusEjection.fragments.length > 0) pilusEjection = initialPilusEjection();
@@ -2884,7 +3004,7 @@ function frame(now: number): void {
   if (showingTitle && !title) renderer.placeCamera(cell.x, cell.y);
   showingTitle = title;
   const camera: [number, number] = title ? titleGlance(now, view.pixels_per_unit) : [cell.x, cell.y];
-  renderer.setSmoothCamera(title);
+  renderer.setTitleFollow(title);
   updatePosition(cell.x, cell.y);
   const elapsed = sunElapsed(now);
   debug.follow(sunCycle(elapsed));
@@ -2896,11 +3016,23 @@ function frame(now: number): void {
   renderer.setSunBrightness(debug.brightness());
   const intensity = debug.brightness() * columnAttenuation(title ? camera[1] : cell.y);
   debug.showBrightness(intensity);
+  const collapse = apoptosis ? bodyCollapse(apoptosis) : null;
+  if (collapse) {
+    cell.osmoticStress = Math.min(cell.osmoticStress ?? 0, collapse.shrivel);
+    cell.length *= collapse.length;
+    cell.width *= collapse.width;
+  }
+  const hideBody = apoptosis !== null && collapse === null;
   const drawn = title
     ? menuSwimmers.map((swimmer) => menuSnapshot(swimmer))
-    : [cell, ...siblings.map((sibling) => siblingSnapshot(sibling, now))];
-  renderer.render(view, drawn, dt, debug.direction(), intensity, camera, title ? [] : pilusFragmentViews());
+    : [...(hideBody ? [] : [cell]), ...siblings.map((sibling) => siblingSnapshot(sibling, now))];
+  const debris: CellDebris | null =
+    !title && apoptosis && burstAlpha(apoptosis.age) > 0
+      ? { alpha: burstAlpha(apoptosis.age), scale: 1, pieces: apoptosis.pieces }
+      : null;
+  renderer.render(view, drawn, dt, debug.direction(), intensity, camera, title ? [] : pilusFragmentViews(), debris);
   refreshSpecies();
+  publishCellSenses(playing ? cell.x : null, playing ? cell.y : null, now / 1000);
   publishInspect(cell);
   syncExpressionCell(cell);
   environmentProbe.refresh();
@@ -3429,6 +3561,8 @@ function siblingSnapshot(cell: SimulatedCell, now: number): CellSnapshot {
     pigment: pigmentTint(cell.pigment),
     glow: fluorEmission(cell.fluor),
     taper: cell.form.taper,
+    heatStress: applyAll ? heatStress : 0,
+    osmoticStress: cell.osmoticStress,
   };
 }
 
@@ -3447,6 +3581,40 @@ function hoverCursor(): string {
   if (inspect.hovering()) return "pointer";
   if (environmentOn) return "crosshair";
   return "";
+}
+
+/**
+ * What the cell itself knows. A transmembrane Osmolyn Receptor reports the
+ * Osmolyn in the water it is touching. Osmoprotectin Synthase raises a shield
+ * whose strength is the expression level. Osmolyn damage is not applied yet,
+ * so the shield is recorded here for that system and shown on the cell.
+ * A transmembrane Aquaporin equilibrates thin water: fuller expression settles closer to 0.
+ */
+/** Cell size for the inspector card: 1x, 0.5x, 2.75x — no trailing zeros. */
+function formatCellSize(scale: number): string {
+  return `${scale.toFixed(2).replace(/\.?0+$/, "")}x`;
+}
+
+function publishCellSenses(x: number | null, y: number | null, timeSeconds: number): void {
+  // The card leads with the cell's own size; the senses follow.
+  const lines: string[] = [`Cell Size: ${formatCellSize(cellScale)}`];
+  if (x !== null && y !== null) {
+    const constructs = getGenome();
+    const sensed = sensedOsmolyn(
+      osmolynReceptorExpressionLevel(constructs, timeSeconds),
+      renderer.nutrientRead("osmolyn", x, y),
+    );
+    if (sensed !== null) lines.push(`Osmolyn  ${formatNutrient(sensed)}`);
+    const shield = osmoprotectinExpressionLevel(constructs, timeSeconds);
+    if (shield > 0) {
+      const slower = (1 - osmolynDamageScale(shield)) * 100;
+      lines.push(`Osmoprotectin  ${slower.toFixed(1)}% slower shrivel`);
+    }
+    const channel = aquaporinExpressionLevel(constructs, timeSeconds);
+    if (aquaporinChannelOpen(channel)) lines.push(`Aquaporin  ${Math.round(channel * 100)}% equilibrating`);
+    lines.push(`Osmotic stress  ${osmoticStress.toFixed(2)}`);
+  }
+  setPlayerCellLines(lines);
 }
 
 function publishInspect(cell: CellSnapshot): void {
@@ -3506,6 +3674,7 @@ function spawnDaughter(
   snap: DivisionState,
   parentPigment: PigmentLevels,
   parentFluor: FluorLevels,
+  parentStore: CellStore,
 ): { kept: BodyPose; form: CellForm } {
   const scale = clamp(snap.scale * 0.5, SIZE_MIN, SIZE_MAX);
   const born = { ...form, scale };
@@ -3534,6 +3703,7 @@ function spawnDaughter(
   const id = nextCellId;
   nextCellId += 1;
   lineage.push(id);
+  const daughterStore = splitCellStore(parentStore);
   const pulseScale = randomPulseScale();
   const bornPulse = independentPulseState(pulse, pulseScale);
   const now = performance.now();
@@ -3557,6 +3727,8 @@ function spawnDaughter(
     piliPresence: grownPili.presence,
     piliFade: grownPili.fade,
     division: null,
+    store: daughterStore,
+    osmoticStress,
   });
   return { kept, form: { ...born } };
 }
@@ -3565,7 +3737,8 @@ const finishDivision = (): void => {
   const snap = division;
   if (!snap) return;
   division = null;
-  const placed = spawnDaughter(pose, playerForm(), currentMembrane(), snap, pigment, fluor);
+  const placed = spawnDaughter(pose, playerForm(), currentMembrane(), snap, pigment, fluor, controlledStore);
+  grantMutationPoints(MUTATION_POINTS_PER_DIVISION);
   pose.x = placed.kept.x;
   pose.y = placed.kept.y;
   pose.angle = placed.kept.angle;
@@ -3590,7 +3763,8 @@ function finishSiblingDivision(cell: SimulatedCell): void {
   const snap = cell.division;
   if (!snap) return;
   cell.division = null;
-  const placed = spawnDaughter(cell.pose, cell.form, cell.membrane, snap, cell.pigment, cell.fluor);
+  const placed = spawnDaughter(cell.pose, cell.form, cell.membrane, snap, cell.pigment, cell.fluor, cell.store);
+  grantMutationPoints(MUTATION_POINTS_PER_DIVISION);
   cell.pose.x = placed.kept.x;
   cell.pose.y = placed.kept.y;
   cell.pose.angle = placed.kept.angle;
@@ -3859,6 +4033,8 @@ function controlledCell(
     taper: currentTaper(),
     pigment: pigmentTint(pigment),
     glow: fluorEmission(fluor),
+    heatStress,
+    osmoticStress,
   };
 }
 
@@ -3876,6 +4052,8 @@ function refreshSpecies(): void {
   const count = lineage.length;
   const place = Math.max(0, lineage.indexOf(controlledId)) + 1;
   const label = cellLabel(controlledId);
+  if (speciesPrev) speciesPrev.disabled = apoptosis !== null || count < 2;
+  if (speciesNext) speciesNext.disabled = apoptosis !== null || count < 2;
   const key = `${controlledId}:${count}:${place}`;
   if (key === speciesKey) return;
   speciesKey = key;
@@ -3885,8 +4063,6 @@ function refreshSpecies(): void {
     "aria-label",
     count === 1 ? `${ownedSpecies}, ${label}` : `${ownedSpecies}, ${label}, ${count} cells in your species`,
   );
-  speciesPrev!.disabled = count < 2;
-  speciesNext!.disabled = count < 2;
   setPopulation(count);
 }
 
@@ -3897,6 +4073,10 @@ function presentControlledCell(): void {
   girthReadout!.textContent = girth.toFixed(2);
   crescentSlider!.value = String(crescent);
   crescentReadout!.textContent = crescent.toFixed(2);
+  osmoticStressSlider!.value = String(osmoticStress);
+  osmoticStressReadout!.textContent = osmoticStress.toFixed(2);
+  heatStressSlider!.value = String(heatStress);
+  heatStressReadout!.textContent = heatStress.toFixed(2);
   syncTaperButtons();
   syncTaperDegrees();
   sizeSlider!.value = String(cellScale);
@@ -3934,6 +4114,8 @@ function captureControlled(): SimulatedCell {
     piliPresence: controlledPiliPresence,
     piliFade: controlledPiliFade ? { ...controlledPiliFade } : null,
     division: division ? { ...division } : null,
+    store: controlledStore,
+    osmoticStress,
   };
 }
 
@@ -3973,11 +4155,96 @@ function installControlled(cell: SimulatedCell): void {
   membraneColorInput!.value = colorHex(cell.membrane.color);
   pigment = copyPigment(cell.pigment);
   fluor = copyFluor(cell.fluor);
+  controlledStore = cell.store;
+  osmoticStress = cell.osmoticStress;
+  showOsmoticStress();
+  focusCellStore(cell.store);
   presentControlledCell();
 }
 
+function beginApoptosis(): void {
+  if (apoptosis || titleScreenOpen() || !divideNote || !apoptosisButton) return;
+  division = null;
+  divideNote.hidden = true;
+  divideNote.textContent = "";
+  swim.vx = 0;
+  swim.vy = 0;
+  swim.omega = 0;
+  swim.thrusting = false;
+  const tint = pigmentTint(pigment);
+  const fill: [number, number, number] = [
+    INTERIOR_BASE_COLOR[0] * tint[0],
+    INTERIOR_BASE_COLOR[1] * tint[1],
+    INTERIOR_BASE_COLOR[2] * tint[2],
+  ];
+  apoptosis = spawnBurst(
+    {
+      x: pose.x,
+      y: pose.y,
+      angle: pose.angle,
+      length: cellLength(),
+      width: cellWidth(),
+      fill,
+      rim: membraneColor(),
+      seed: controlledSeed * 4096 + controlledId,
+    },
+    controlledId,
+  );
+  apoptosisButton.disabled = true;
+  if (speciesPrev) speciesPrev.disabled = true;
+  if (speciesNext) speciesNext.disabled = true;
+}
+
+function restoreSeedCell(): void {
+  siblings.length = 0;
+  division = null;
+  flagellaCache.delete(controlledId);
+  controlledId = nextCellId;
+  nextCellId += 1;
+  controlledSeed = controlledId;
+  pose.x = 0;
+  pose.y = -450;
+  pose.angle = 0;
+  pose.length = cellLength();
+  swim.vx = 0;
+  swim.vy = 0;
+  swim.omega = 0;
+  swim.thrusting = true;
+  swim.driveX = 0;
+  swim.driveY = 0;
+  controlledStore = createCellStore(STARTING_ATP);
+  focusCellStore(controlledStore);
+  lineage.length = 0;
+  lineage.push(controlledId);
+  refreshSpecies();
+}
+
+function finishApoptosis(): void {
+  const deadId = apoptosis?.cellId ?? controlledId;
+  apoptosis = null;
+  if (apoptosisButton) apoptosisButton.disabled = false;
+  const nextId = apoptosisSuccessor(lineage, deadId);
+  const deadIndex = lineage.indexOf(deadId);
+  if (deadIndex >= 0) lineage.splice(deadIndex, 1);
+  flagellaCache.delete(deadId);
+  if (nextId === null) {
+    restoreSeedCell();
+    returnToMainMenu();
+    return;
+  }
+  const slot = siblings.findIndex((cell) => cell.id === nextId);
+  const incoming = slot < 0 ? undefined : siblings[slot];
+  if (!incoming) {
+    restoreSeedCell();
+    returnToMainMenu();
+    return;
+  }
+  siblings.splice(slot, 1);
+  installControlled(incoming);
+}
+
 function focusSpecies(step: number): void {
-  if (lineage.length < 2) return;
+  if (apoptosis || lineage.length < 2) return;
   const index = lineage.indexOf(controlledId);
   const safe = index < 0 ? 0 : index;
   const nextId = lineage[(safe + step + lineage.length) % lineage.length];

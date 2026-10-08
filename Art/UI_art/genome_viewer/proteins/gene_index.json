@@ -469,6 +469,15 @@
           "shape": "short anchored helical stem with small external folded cap",
           "row": 4,
           "column": 1
+        },
+        {
+          "code": "OSMP",
+          "name": "Osmoprotectin Synthase",
+          "type": "P",
+          "color": "gray lavender",
+          "shape": "paired rounded catalytic lobes with central cleft",
+          "row": 4,
+          "column": 2
         }
       ],
       "file": "05_homeostasis.png"
@@ -730,7 +739,7 @@
         },
         {
           "code": "OSMR",
-          "name": "Osmoreceptor",
+          "name": "Osmolyn Receptor",
           "type": "R",
           "color": "sage green",
           "shape": "wide paired external sensor lobes with short membrane stems and compact lower kinase lobes",

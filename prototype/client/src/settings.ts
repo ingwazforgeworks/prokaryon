@@ -2,7 +2,7 @@ const STORAGE_KEY = "prokaryon.settings";
 
 export const UI_SCALE_MIN = 0.75;
 export const UI_SCALE_MAX = 3;
-/** Fallback when the monitor size is unavailable. */
+/** Layout size the panels are authored for. Auto scale will not shrink below this. */
 const UI_REFERENCE_WIDTH = 1280;
 const UI_REFERENCE_HEIGHT = 720;
 
@@ -29,9 +29,21 @@ export function uiScale(): number {
 }
 
 /**
- * The layout reads correctly at about half the monitor. A full window
- * scales up so type and windows keep that same share of the screen.
+ * Fullscreen keeps type and windows near half the monitor, but the layout
+ * box stays at least 1280×720. A larger scale shrinks that box, and the
+ * fixed chrome in panels such as the gene editor then flex-crushes until
+ * slots and labels disappear.
  */
+export function layoutUiScale(viewW: number, viewH: number, monitorW: number, monitorH: number): number {
+  const viewWidth = Math.max(1, viewW);
+  const viewHeight = Math.max(1, viewH);
+  const monitorWidth = Math.max(monitorW, viewWidth);
+  const monitorHeight = Math.max(monitorH, viewHeight);
+  const share = Math.min(viewWidth / (monitorWidth / 2), viewHeight / (monitorHeight / 2));
+  const fit = Math.min(viewWidth / UI_REFERENCE_WIDTH, viewHeight / UI_REFERENCE_HEIGHT);
+  return clampScale(Math.min(share, fit), 1);
+}
+
 export function monitorUiScale(): number {
   if (typeof window === "undefined") return 1;
   const viewW = document.documentElement?.clientWidth || window.innerWidth || UI_REFERENCE_WIDTH;
@@ -39,7 +51,7 @@ export function monitorUiScale(): number {
   const screen = window.screen;
   const monitorW = Math.max(screen?.width || 0, viewW);
   const monitorH = Math.max(screen?.height || 0, viewH);
-  return clampScale(Math.min(viewW / (monitorW / 2), viewH / (monitorH / 2)), 1);
+  return layoutUiScale(viewW, viewH, monitorW, monitorH);
 }
 
 export function setGameSettings(patch: Partial<GameSettings>): void {

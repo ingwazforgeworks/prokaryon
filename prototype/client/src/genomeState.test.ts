@@ -114,6 +114,11 @@ check(geneAcceptsRoute("ATPS", "TransmembraneSignal") && !geneAcceptsRoute("ATPS
 check(!geneAcceptsSite("ATPS"), "ATP synthase refuses position tags");
 // Adhesin embeds in the membrane: transmembrane only, no position tag.
 check(geneAcceptsRoute("ADHN", "TransmembraneSignal") && !geneAcceptsRoute("ADHN", "SURF") && !geneAcceptsRoute("ADHN", "SecretoryPeptide"), "adhesin only takes the transmembrane route");
+check(geneAcceptsRoute("OSMR", "TransmembraneSignal") && !geneAcceptsRoute("OSMR", "CYTO") && !geneAcceptsRoute("OSMR", "SecretoryPeptide") && !geneAcceptsRoute("OSMR", "SURF"), "the osmolyn receptor only takes the transmembrane route");
+check(geneAcceptsRoute("AQUP", "TransmembraneSignal") && !geneAcceptsRoute("AQUP", "CYTO") && !geneAcceptsRoute("AQUP", "SecretoryPeptide") && !geneAcceptsRoute("AQUP", "SURF"), "aquaporin only takes the transmembrane route");
+check(geneAcceptsSite("AQUP"), "aquaporin accepts a position tag");
+check(geneAcceptsSite("OSMR"), "the osmolyn receptor accepts a position tag");
+check(geneAcceptsRoute("OSMP", "CYTO") && geneAcceptsRoute("OSMP", "TransmembraneSignal") && geneAcceptsRoute("OSMP", "SecretoryPeptide"), "osmoprotectin synthase takes any destination");
 check(!geneAcceptsSite("ADHN"), "adhesin refuses position tags");
 // Cohesin works at range or anchored: secreted or membrane anchored, no position tag.
 check(geneAcceptsRoute("COHS", "SecretoryPeptide") && geneAcceptsRoute("COHS", "SURF") && !geneAcceptsRoute("COHS", "CYTO") && !geneAcceptsRoute("COHS", "TransmembraneSignal"), "cohesin takes the secreted or membrane-anchored destinations");
@@ -406,7 +411,7 @@ const hyperCassette: Cassette = {
   routeId: null,
   siteId: null,
 };
-check(cassetteAtpCost(hyperCassette) === 8, "hyperexpression upkeep is 8 ATP per second");
+check(cassetteAtpCost(hyperCassette) === 0.16, "hyperexpression upkeep is 0.16 ATP per second");
 check(cassetteMutationCost(hyperCassette) === 9, "assembly cost adds promoter, amount, and coding parts");
 const rangedCassette: Cassette = {
   ...hyperCassette,
@@ -418,29 +423,29 @@ const rangedCassette: Cassette = {
   routeId: "SURF",
   siteId: "LATR",
 };
-check(cassetteAtpCost(rangedCassette) === 2.2, "ranged upkeep averages the two amount levels and charges the tags");
+check(cassetteAtpCost(rangedCassette) === 0.044, "ranged upkeep averages the two amount levels and charges the tags");
 check(cassetteMutationCost(rangedCassette) === 10, "ranged assembly cost includes both tags");
 const bareCassette: Cassette = {
   ...hyperCassette,
   uid: "cost-bare",
   amountId: null,
 };
-check(cassetteAtpCost(bareCassette) === 1 && cassetteMutationCost(bareCassette) === 6, "a cassette without an amount uses the medium baseline");
+check(cassetteAtpCost(bareCassette) === 0.02 && cassetteMutationCost(bareCassette) === 6, "a cassette without an amount uses the medium baseline");
 
 // Upkeep is charged at runtime, so the scale carries the new-cell economy.
 const offCassette: Cassette = { ...hyperCassette, uid: "cost-off", amountId: "OFF" };
 check(cassetteAtpCost(offCassette) === 0, "a silenced cassette spends nothing, as its tile promises");
 const microCassette: Cassette = { ...hyperCassette, uid: "cost-micro", amountId: "MICRO" };
-check(cassetteAtpCost(microCassette) === 0.2, "microexpression upkeep is 0.2 ATP per second");
+check(cassetteAtpCost(microCassette) === 0.004, "microexpression upkeep is 0.004 ATP per second");
 check(genomeAtpUpkeep([]) === 0, "an empty genome has no upkeep");
-check(genomeAtpUpkeep([hyperCassette, hyperCassette]) === 16, "upkeep sums across constructs");
+check(genomeAtpUpkeep([hyperCassette, hyperCassette]) === 0.32, "upkeep sums across constructs");
 // Calibration: the starter metabolizer - one transmembrane permease and one
 // cytosolic reductase at medium - runs a new cell's starting ATP dry in
-// about five minutes when nothing refills it.
+// about four and a half hours when nothing refills it.
 const starterPermease: Cassette = { ...hyperCassette, uid: "cal-permease", amountId: "MED", routeId: "TransmembraneSignal" };
 const starterReductase: Cassette = { ...hyperCassette, uid: "cal-reductase", amountId: "MED", routeId: "CYTO" };
-const dryMinutes = STARTING_ATP / genomeAtpUpkeep([starterPermease, starterReductase]) / 60;
-check(dryMinutes > 4.5 && dryMinutes < 6.5, `the starter metabolizer runs dry in about five minutes (${dryMinutes.toFixed(1)})`);
+const dryHours = STARTING_ATP / genomeAtpUpkeep([starterPermease, starterReductase]) / 3600;
+check(dryHours > 4.4 && dryHours < 4.9, `the starter metabolizer runs dry in about four and a half hours (${dryHours.toFixed(1)})`);
 check(cellResources().find((resource) => resource.id === "atp")?.amount === STARTING_ATP, "a new cell starts with 1000 ATP");
 
 if (failed > 0) {

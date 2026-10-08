@@ -24,6 +24,9 @@ export const GENE_MP_COSTS: Readonly<Record<string, number>> = {
   GRTN: 1,
   TPRN: 1,
   ISPR: 1,
+  OSMR: 1,
+  OSMP: 1,
+  AQUP: 1,
 };
 
 /** The top-level genes every cell carries from the start of its life. */

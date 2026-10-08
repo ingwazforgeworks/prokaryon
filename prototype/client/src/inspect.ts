@@ -1,4 +1,5 @@
 import { bodyFromSnapshot, colliderSignedDistance, curvedHalfExtents, orientedCapsule } from "./shape";
+import { ownedSpecies } from "./species";
 import type { CellSnapshot } from "./types";
 
 export interface WorldRect {
@@ -55,8 +56,16 @@ export function playerCellTarget(cell: CellSnapshot): InspectTarget {
   if (cell.id !== playerId) {
     playerId = cell.id;
     playerTarget.id = `cell:${cell.id}`;
+    // The card names the selected cell like a specimen label: species plus
+    // the cell's lineage number, zero-padded ("Methanobacillus salinus 002").
+    playerTarget.title = `${ownedSpecies} ${String(cell.id).padStart(3, "0")}`;
   }
   return playerTarget;
+}
+
+/** Replaces the lines shown when the player cell is selected. */
+export function setPlayerCellLines(lines: readonly string[]): void {
+  playerTarget.lines = lines;
 }
 
 export function createInspect(host: HTMLCanvasElement, view: InspectView) {

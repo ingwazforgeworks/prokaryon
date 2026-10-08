@@ -121,6 +121,10 @@ export interface CellSnapshot {
   membraneColor?: [number, number, number];
   /** Multiplier on the cytoplasm palette. Omitted cells stay the neutral gray. */
   pigment?: [number, number, number];
+  /** 0–1 membrane failure. Omitted cells stay intact. */
+  heatStress?: number;
+  /** -1 shriveled, 0 resting, +1 taut. Omitted cells stay resting. */
+  osmoticStress?: number;
   /** Fluorescent emission. Zero or omitted cells cast no glow. */
   glow?: [number, number, number];
 }

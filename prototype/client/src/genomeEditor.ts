@@ -223,12 +223,15 @@ export function initGenomeEditor(): void {
   const selectionPane = document.createElement("section");
   selectionPane.className = "editor-pane editor-selection";
   selectionPane.setAttribute("aria-label", "Selected tile");
+  const selectionBody = document.createElement("div");
+  selectionBody.className = "editor-selection-body";
   const selectionLabel = document.createElement("p");
   selectionLabel.className = "editor-kicker";
   selectionLabel.textContent = "Selected";
   const selected = document.createElement("div");
   selected.className = "editor-inspect";
-  selectionPane.append(selectionLabel, selected);
+  selectionBody.append(selectionLabel, selected);
+  selectionPane.append(selectionBody);
   aside.append(constructPane, selectionPane);
   root.append(main, aside);
 

@@ -9,8 +9,15 @@ import { geneExpressionLevel, type FlagellinConstruct } from "./flagellinDistrib
  * for and hands back a modest amount of ATP for every unit it burns.
  */
 
-/** Fuel units burned per second at full expression. */
+/** Fuel units burned per second at full expression with a saturated store. */
 export const REDUCTASE_FUEL_PER_SECOND = 5;
+
+/**
+ * Store size at which the burn runs at half its expressed rate. Below this the
+ * reductase slows, so a permease feeding an empty cell fills a visible reserve
+ * instead of turning each frame's import into ATP before the pool can be seen.
+ */
+export const REDUCTASE_HALF_STORE = 100;
 
 /** ATP produced for every fuel unit burned. */
 export const ATP_PER_FUEL_UNIT = 2;
@@ -37,9 +44,10 @@ export function reductaseExpressionLevel(
 }
 
 /**
- * Step one reductase forward by dt. The burn rate is proportional to the
- * reductase expression level, and it never outruns its supplies: an empty fuel
- * pool burns nothing, and a full ATP pool stops the burn rather than wasting
+ * Step one reductase forward by dt. The burn rate follows expression and how
+ * full the intracellular store is: an empty pool burns nothing, a store at
+ * REDUCTASE_HALF_STORE burns at half the expressed rate, and only a deep store
+ * reaches the full rate. A full ATP pool stops the burn rather than wasting
  * fuel it cannot store. The returned rates are the realized change per
  * second, for the resource bar readouts.
  */
@@ -53,7 +61,8 @@ export function stepReductase(
   if (!(expression > 0) || !(dt > 0) || !(fuelAmount > 0)) {
     return { fuel: fuelAmount, atp: atpAmount, fuelRate: 0, atpRate: 0 };
   }
-  const desired = REDUCTASE_FUEL_PER_SECOND * expression * dt;
+  const saturation = fuelAmount / (fuelAmount + REDUCTASE_HALF_STORE);
+  const desired = REDUCTASE_FUEL_PER_SECOND * expression * saturation * dt;
   const atpHeadroom = atpCapacity > 0 ? (atpCapacity - atpAmount) / ATP_PER_FUEL_UNIT : 0;
   const burned = Math.min(desired, fuelAmount, Math.max(0, atpHeadroom));
   if (burned <= 0) return { fuel: fuelAmount, atp: atpAmount, fuelRate: 0, atpRate: 0 };

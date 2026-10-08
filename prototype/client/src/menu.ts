@@ -55,6 +55,13 @@ export function titleScreenOpen(): boolean {
   return phase !== "lab";
 }
 
+let reopenMainMenu: (() => void) | null = null;
+
+/** Show the settled main menu again after the lab has dismissed it. */
+export function returnToMainMenu(): void {
+  reopenMainMenu?.();
+}
+
 export function initTitleScreen(): void {
   const root = document.querySelector<HTMLElement>("#title");
   const splash = document.querySelector<HTMLButtonElement>("#splash");
@@ -150,6 +157,7 @@ export function initTitleScreen(): void {
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const splashTimers: number[] = [];
   let removed = false;
+  let leaveTimer = 0;
 
   const later = (ms: number, run: () => void): void => {
     splashTimers.push(window.setTimeout(run, ms));
@@ -417,13 +425,45 @@ export function initTitleScreen(): void {
     ui?.removeAttribute("inert");
     root.classList.add("is-leaving");
     const close = (): void => {
-      if (removed) return;
+      if (phase !== "lab" || removed) return;
       removed = true;
       root.remove();
     };
-    root.addEventListener("transitionend", close);
-    window.setTimeout(close, reduceMotion ? 0 : 360);
+    root.addEventListener("transitionend", close, { once: true });
+    window.clearTimeout(leaveTimer);
+    leaveTimer = window.setTimeout(close, reduceMotion ? 0 : 360);
   };
+
+  const restoreMenu = (): void => {
+    window.clearTimeout(leaveTimer);
+    const host = ui?.parentElement ?? document.body;
+    if (!root.isConnected) host.insertBefore(root, ui);
+    removed = false;
+    root.hidden = false;
+    document.documentElement.dataset.title = "1";
+    ui?.setAttribute("inert", "");
+    clearSplash();
+    splash.inert = true;
+    menu.inert = false;
+    root.classList.remove("is-splash", "is-logo", "is-prompt");
+    root.classList.add("is-menu", "is-brand", "is-world", "is-music", "is-actions", "is-leaving");
+    const past = performance.now() - 20000;
+    buttonsReady = true;
+    swimOrigin = past;
+    musicAt = past;
+    lyricsArmed = true;
+    lyricsAt = past;
+    microbeShown = false;
+    microbeLast = 0;
+    showActions();
+    beginIntro();
+    startTheme();
+    requestAnimationFrame(() => {
+      if (phase === "lab") return;
+      root.classList.remove("is-leaving");
+    });
+  };
+  reopenMainMenu = restoreMenu;
 
   for (const button of [newCell, loadCell, settings, credits, geneMakerButton, back, discord, themeBack, themeNext, themeToggle, themeVolume]) {
     button.addEventListener("pointerenter", () => playCue("hover"));

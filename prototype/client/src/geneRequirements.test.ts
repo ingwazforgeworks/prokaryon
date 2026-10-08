@@ -83,6 +83,18 @@ for (const id of ["ELGN", "CRST", "CRYS", "GRTN", "TPRN", "ISPR"]) {
   check(gene?.category === "Morphology", `${id} is a morphology gene record`);
   check(geneUnlockCost(id) === 1, `${id} costs one mutation point`);
 }
+for (const [id, category] of [
+  ["OSMR", "Perception"],
+  ["OSMP", "Homeostasis"],
+  ["AQUP", "Homeostasis"],
+] as const) {
+  const gene = GENES.find((entry) => entry.id === id);
+  const node = savedNodes.find((entry) => entry.id === id || entry.geneId === id);
+  check(gene?.category === category, `${id} is a ${category.toLowerCase()} gene record`);
+  check(geneUnlockCost(id) === 1, `${id} costs one mutation point`);
+  check(node !== undefined && node.category === category, `${id} sits on the ${category.toLowerCase()} board`);
+  check(!savedEdges.some((edge) => edge.to === id), `${id} is an entry node`);
+}
 
 resetUnlocks();
 setMutationPoints(20);

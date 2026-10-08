@@ -121,7 +121,7 @@ export type GenomeNotice = {
   inserted: number | null;
 };
 
-const PROMOTERS: PromoterRecord[] = [
+export const PROMOTERS: PromoterRecord[] = [
   {
     id: "CNST",
     name: "Always On",
@@ -169,7 +169,7 @@ const PROMOTERS: PromoterRecord[] = [
   },
 ];
 
-const AMOUNTS: AmountRecord[] = [
+export const AMOUNTS: AmountRecord[] = [
   {
     id: "OFF",
     name: "No expression",
@@ -221,7 +221,7 @@ const AMOUNTS: AmountRecord[] = [
   },
 ];
 
-const TAGS: TagRecord[] = [
+export const TAGS: TagRecord[] = [
   {
     id: "CYTO",
     name: "Cytosolic",
@@ -311,7 +311,7 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
   CBXP: { routeId: "SecretoryPeptide", siteId: "BILT" },
   ATPS: { routeId: "TransmembraneSignal", siteId: null },
   ADHN: { routeId: "TransmembraneSignal", siteId: null },
-  AQUP: { routeId: "SURF", siteId: "PolarLocalizationSignal" },
+  AQUP: { routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" },
   PPMP: { routeId: "SURF", siteId: "AntiPolarLocalizationSignal" },
   PHOR: { routeId: "SURF", siteId: "BIPO" },
   SIDP: { routeId: "SURF", siteId: "LATR" },
@@ -321,6 +321,7 @@ const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: strin
   FLGM: { routeId: "TransmembraneSignal", siteId: null },
   PILN: { routeId: "TransmembraneSignal", siteId: "AntiPolarLocalizationSignal" },
   CHMR: { routeId: null, siteId: "BIPO" },
+  OSMR: { routeId: "TransmembraneSignal", siteId: null },
   CHLS: { routeId: null, siteId: "LATR" },
   FERP: { routeId: "TransmembraneSignal", siteId: null },
   FERR: { routeId: "CYTO", siteId: null },
@@ -424,6 +425,8 @@ const GENE_ROUTES: Record<string, string[]> = {
   ISPR: ["SecretoryPeptide"],
   CILM: ["TransmembraneSignal"],
   PILN: ["TransmembraneSignal", "SecretoryPeptide"],
+  OSMR: ["TransmembraneSignal"],
+  AQUP: ["TransmembraneSignal"],
 };
 
 /** Genes that cannot carry a position tag. Genes left out take any position. */
@@ -564,11 +567,12 @@ export function behaviorLine(value: Draft = draft): string {
   return `${promoter.activation} → ${gene.name} production${where}`;
 }
 
-// Upkeep in tenths of ATP per second, one slot per amount level 0-6 (OFF through
-// HYPER). The upkeep step charges exactly this per cassette, so the genome
-// viewer's "ATP upkeep" line is the live drain. A starter metabolizer - one
-// permease and one reductase at medium with a position tag each - draws 3 ATP/s,
-// so the 1000 ATP a new cell starts with runs dry in about five minutes unless
+// Upkeep in tenths of the original ATP-per-second scale, one slot per amount
+// level 0-6 (OFF through HYPER). Expression ATP is one fiftieth of that scale.
+// The upkeep step charges exactly this per cassette, so the genome viewer's
+// "ATP upkeep" line is the live drain. A starter metabolizer - one permease and
+// one reductase at medium with a position tag each - draws 0.06 ATP/s, so the
+// 1000 ATP a new cell starts with lasts about four and a half hours unless
 // metabolism refills it. OFF is free: the tile's own text promises the gene
 // spends nothing while it is off.
 const AMOUNT_ATP_TENTHS: readonly number[] = [0, 2, 5, 10, 20, 40, 80];
@@ -577,6 +581,11 @@ const PROMOTER_MP: Record<string, number> = { CNST: 1, COND: 2, COSL: 3, GRAD: 3
 const TAG_ATP_TENTHS = 5;
 const CODING_MP = 2;
 const DEFAULT_AMOUNT_LEVEL = 3;
+const EXPRESSION_ATP_SCALE = 1 / 50;
+
+function atpFromTenths(tenths: number): number {
+  return Math.round((tenths / 10) * EXPRESSION_ATP_SCALE * 1000) / 1000;
+}
 
 /** ATP upkeep per second for one cassette, charged every frame by the upkeep step. */
 export function cassetteAtpCost(cassette: Cassette): number {
@@ -584,14 +593,14 @@ export function cassetteAtpCost(cassette: Cassette): number {
   const amount = AMOUNT_ATP_TENTHS[Math.min(AMOUNT_ATP_TENTHS.length - 1, Math.max(0, level))] ?? 10;
   const promoter = PROMOTER_ATP_TENTHS[cassette.promoterId] ?? 2;
   const tags = (cassette.routeId === null ? 0 : 1) + (cassette.siteId === null ? 0 : 1);
-  return (amount + promoter + tags * TAG_ATP_TENTHS) / 10;
+  return atpFromTenths(amount + promoter + tags * TAG_ATP_TENTHS);
 }
 
-/** Total ATP upkeep per second across a whole genome, in tenths to keep the sum clean. */
+/** Total ATP upkeep per second across a whole genome, in thousandths to keep the sum clean. */
 export function genomeAtpUpkeep(cassettes: readonly Cassette[]): number {
   let total = 0;
   for (const cassette of cassettes) total += cassetteAtpCost(cassette);
-  return Math.round(total * 10) / 10;
+  return Math.round(total * 1000) / 1000;
 }
 
 /** Placeholder mutation point cost of assembling one cassette in the editor. */
@@ -1071,7 +1080,7 @@ function sanitizeDraft(value: unknown): Draft {
   return { name, code, promoterId, geneId, ...readAmountFields(body, promoterId), ...readTagFields(body, geneId) };
 }
 
-function sanitizeCassette(value: unknown): Cassette | null {
+export function sanitizeCassette(value: unknown): Cassette | null {
   if (!value || typeof value !== "object") return null;
   const body = value as { uid?: unknown; name?: unknown; code?: unknown; promoterId?: unknown; amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown };
   if (typeof body.promoterId !== "string" || !promotersById.has(body.promoterId)) return null;

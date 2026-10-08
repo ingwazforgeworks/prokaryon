@@ -630,15 +630,12 @@
         color: #f2eadc;
         cursor: pointer;
       }
-      .resource-chip.resource-split::before {
-        content: "";
-        position: absolute;
-        left: -4px;
-        top: 7px;
-        bottom: 7px;
-        width: 1px;
-        background: rgba(168, 206, 204, 0.42);
-        pointer-events: none;
+      .resource-sep {
+        flex: none;
+        align-self: center;
+        color: rgba(186, 214, 214, 0.72);
+        font-size: 15px;
+        line-height: 1;
       }
       .resource-badge {
         width: 22px;
@@ -1255,21 +1252,20 @@
       .genome-editor {
         flex: 1;
         min-height: 0;
-        display: flex;
-        align-items: stretch;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) clamp(176px, 28%, 320px);
+        grid-template-rows: minmax(0, 1fr) auto;
         overflow: hidden;
         background: #070b0d;
       }
       .editor-main {
-        flex: 1 1 72%;
-        min-width: 0;
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
+        display: contents;
       }
       .editor-bench {
-        flex: 1.3 1 0;
+        grid-column: 1;
+        grid-row: 1;
         min-height: 0;
+        overflow: hidden;
         display: flex;
         flex-direction: column;
         border-bottom: 1px solid rgba(150, 196, 194, 0.28);
@@ -1386,8 +1382,8 @@
       }
       .editor-stage {
         position: relative;
-        flex: 1;
-        min-height: 0;
+        flex: 1 1 auto;
+        min-height: 136px;
         overflow: hidden;
         display: flex;
         flex-direction: column;
@@ -1575,13 +1571,17 @@
       }
       .editor-behavior { color: #c9ddd8; }
       .editor-tray {
-        flex: 0 0 auto;
+        grid-column: 1;
+        grid-row: 2;
         display: flex;
         flex-direction: column;
+        min-height: 0;
         background: rgba(8, 12, 14, 0.92);
       }
       .editor-tray-bar {
-        justify-content: space-between;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
         gap: 10px;
         padding: 6px 8px;
         border-bottom: 1px solid rgba(150, 196, 194, 0.28);
@@ -1596,18 +1596,24 @@
         color: #f6edd8;
         background: linear-gradient(180deg, rgba(92, 64, 28, 0.95), rgba(36, 24, 10, 0.95));
       }
-      .editor-search {
-        flex: 1;
-        max-width: 220px;
+      .editor-tray-bar .editor-search {
+        flex: 0 0 110px;
+        width: 110px;
+        min-width: 0;
+        max-width: 110px;
+        margin-left: auto;
         padding: 0;
         border: 0;
+      }
+      .editor-tray-bar .editor-search input {
+        min-width: 0;
       }
       .editor-cards {
         flex: none;
         height: 188px;
-        min-height: 0;
+        min-height: 160px;
         display: grid;
-        grid-template-rows: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(2, minmax(72px, 1fr));
         grid-auto-flow: column;
         grid-auto-columns: max-content;
         align-content: stretch;
@@ -1628,8 +1634,8 @@
         height: 100%;
         width: auto;
         aspect-ratio: 1;
-        min-width: 0;
-        min-height: 0;
+        min-width: 76px;
+        min-height: 72px;
         margin: 0;
         padding: 4px;
         display: flex;
@@ -1684,33 +1690,73 @@
         color: #8aa4a2;
       }
       .editor-inspector {
-        flex: 0 0 28%;
-        width: 28%;
-        max-width: 320px;
-        min-width: 176px;
+        grid-column: 2;
+        grid-row: 1 / -1;
+        display: grid;
+        grid-template-rows: subgrid;
+        min-width: 0;
         min-height: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
         overflow: hidden;
-        padding: 8px 10px 10px;
-        box-sizing: border-box;
         border-left: 1px solid rgba(150, 196, 194, 0.35);
         background: rgba(8, 12, 14, 0.96);
-        scrollbar-width: thin;
-        scrollbar-color: rgba(150, 196, 194, 0.45) transparent;
       }
       .editor-pane {
-        flex: 1 1 0;
         min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 6px;
         overflow: hidden;
+        box-sizing: border-box;
+      }
+      .editor-construct {
+        grid-row: 1;
+        padding: 8px 10px;
       }
       .editor-selection {
+        grid-row: 2;
+        position: relative;
         border-top: 1px solid rgba(150, 196, 194, 0.35);
-        padding-top: 8px;
+      }
+      .editor-selection-body {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+        padding: 8px 10px 10px;
+        box-sizing: border-box;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #6f9c9a transparent;
+      }
+      .editor-selection-body::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      .editor-selection-body::-webkit-scrollbar-track {
+        background: transparent;
+        border-left: 1px solid rgba(150, 196, 194, 0.22);
+      }
+      .editor-selection-body::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(86, 132, 130, 0.95), rgba(28, 52, 54, 0.95));
+        border: 1px solid rgba(180, 214, 212, 0.45);
+        box-shadow: inset 0 1px 0 rgba(214, 236, 234, 0.2);
+      }
+      .editor-selection-body::-webkit-scrollbar-thumb:hover {
+        border-color: #e2a04a;
+        background: linear-gradient(180deg, rgba(110, 160, 156, 0.98), rgba(36, 64, 66, 0.98));
+      }
+      .editor-selection-body::-webkit-scrollbar-button {
+        display: none;
+        width: 0;
+        height: 0;
+      }
+      .editor-selection .editor-inspect {
+        flex: none;
+        overflow: visible;
       }
       .editor-kicker { margin: 0; }
       .editor-inspector .editor-name { width: 100%; }
@@ -1723,6 +1769,8 @@
         gap: 6px;
         min-width: 0;
         overflow: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(150, 196, 194, 0.45) transparent;
       }
       .editor-protein {
         display: flex;
@@ -3788,7 +3836,9 @@
           var viewH = window.innerHeight || 720;
           var monitorW = Math.max(screen.width || 0, viewW);
           var monitorH = Math.max(screen.height || 0, viewH);
-          return clamp(Math.min(viewW / (monitorW / 2), viewH / (monitorH / 2)));
+          var share = Math.min(viewW / (monitorW / 2), viewH / (monitorH / 2));
+          var fit = Math.min(viewW / 1280, viewH / 720);
+          return clamp(Math.min(share, fit));
         }
         var scale = monitorScale();
         try {
@@ -4043,6 +4093,7 @@
         <button id="debug-tab-motility" class="debug-wide active" type="button" aria-pressed="true">Motility Tab</button>
         <button id="debug-tab-morphology" class="debug-wide" type="button" aria-pressed="false">Morphology Tab</button>
         <button id="debug-tab-pigment" class="debug-wide" type="button" aria-pressed="false">Pigment Tab</button>
+        <button id="debug-tab-homeostasis" class="debug-wide" type="button" aria-pressed="false">Homeostasis Tab</button>
       </div>
       <div id="debug-motility">
       <div class="debug-row">
@@ -4281,6 +4332,21 @@
         <span id="cell-rfp-value">0.00</span>
       </div>
       </div>
+      <div id="debug-homeostasis" hidden>
+      <div class="debug-row">
+        <span>Osmotic stress</span>
+        <input id="cell-osmotic-stress" type="range" min="-1" max="1" value="0" step="0.01" aria-label="Osmotic stress">
+        <span id="cell-osmotic-stress-value">0.00</span>
+      </div>
+      <div class="debug-row">
+        <span>Heat stress</span>
+        <input id="cell-heat-stress" type="range" min="0" max="1" value="0" step="0.01" aria-label="Heat stress">
+        <span id="cell-heat-stress-value">0.00</span>
+      </div>
+      <div class="debug-row">
+        <button id="cell-apoptosis" class="debug-wide" type="button">Apoptosis</button>
+      </div>
+      </div>
       </div>
     </aside>
     </div>
@@ -4290,7 +4356,11 @@
           <img class="genome-icon" src="/ui/icons/new_icons/32x32/genome_viewer_32.png" alt="" width="16" height="16" />
           <h2 class="genome-title">Genome Viewer</h2>
         </div>
-        <button type="button" class="genome-close" id="genome-viewer-close" aria-label="Close">X</button>
+        <div class="settings-title-actions">
+          <button type="button" class="genome-mode-tab" id="genome-pasta-save" title="Download the genome as a .pasta file">Save .pasta</button>
+          <button type="button" class="genome-mode-tab" id="genome-pasta-load" title="Load a genome from a .pasta file">Load .pasta</button>
+          <button type="button" class="genome-close" id="genome-viewer-close" aria-label="Close">X</button>
+        </div>
       </header>
       <div class="genome-body" id="genome-viewer-pane">
         <section class="genome-genes" aria-label="Genes">

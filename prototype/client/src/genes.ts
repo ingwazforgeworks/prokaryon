@@ -232,7 +232,7 @@ export const GENES: GeneRecord[] = [
     "id": "AQUP",
     "name": "Aquaporin",
     "category": "Homeostasis",
-    "description": "A gated water channel. Lets the cell move water across its membrane far faster than passive leakage allows, and close the channel to slow an unwanted flux. Immediate response, no storage."
+    "description": "A gated water channel in the cell membrane. Any transmembrane expression opens it fully, and extra copies do not move more water. The open channel lets water cross far faster than passive leakage, and closing it slows an unwanted flux. Immediate response, no storage."
   },
   {
     "id": "CSP",
@@ -269,6 +269,12 @@ export const GENES: GeneRecord[] = [
     "name": "Membrane Saturase",
     "category": "Homeostasis",
     "description": "Removes double bonds from membrane lipids, lowering fluidity. Keeps the envelope from becoming dangerously loose as Temperature rises, and shifts the cell's optimum upward into the heat."
+  },
+  {
+    "id": "OSMP",
+    "name": "Osmoprotectin Synthase",
+    "category": "Homeostasis",
+    "description": "Synthesises Osmoprotectin, which shields the cell from Osmolyn stress in proportion to how strongly the gene is expressed. Any copy the cell actually makes adds to that shield."
   },
   {
     "id": "OSMS",
@@ -470,9 +476,9 @@ export const GENES: GeneRecord[] = [
   },
   {
     "id": "OSMR",
-    "name": "Osmoreceptor",
+    "name": "Osmolyn Receptor",
     "category": "Perception",
-    "description": "Detects mechanical strain in the envelope caused by water moving in or out, and reports it as a scalar. The cell senses the consequence of osmotic imbalance rather than Salinity itself."
+    "description": "Reports the Osmolyn concentration in the water touching the cell. The receptor only works embedded in the membrane; copies left in the cytosol, secreted, or merely anchored give the cell no reading at all."
   },
   {
     "id": "PCHR",

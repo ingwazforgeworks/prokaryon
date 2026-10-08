@@ -5,7 +5,9 @@
       { "key": "tree:Motility", "label": "Motility", "accent": "#3ec4c0", "x": 28, "y": 28, "w": 620, "h": 206 },
       { "key": "tree:Morphology", "label": "Morphology", "accent": "#8fb4d4", "x": 672, "y": 28, "w": 392, "h": 306 },
       { "key": "tree:Metabolism", "label": "Metabolism", "accent": "#6fbf7a", "x": 28, "y": 268, "w": 848, "h": 106 },
-      { "key": "tree:Reproduction", "label": "Reproduction", "accent": "#d46a6a", "x": 28, "y": 408, "w": 240, "h": 106 }
+      { "key": "tree:Reproduction", "label": "Reproduction", "accent": "#d46a6a", "x": 28, "y": 408, "w": 240, "h": 106 },
+      { "key": "tree:Perception", "label": "Perception", "accent": "#e2d36a", "x": 1088, "y": 28, "w": 160, "h": 140 },
+      { "key": "tree:Homeostasis", "label": "Homeostasis", "accent": "#e2a04a", "x": 1088, "y": 188, "w": 248, "h": 140 }
     ],
     "nodes": [
       {
@@ -295,6 +297,42 @@
         "groupKey": "tree:Reproduction",
         "category": "Reproduction",
         "description": "Pushes the cell to divide while it is expressed, but only once it has grown to division size 1.0 — the smallest size that leaves both daughters above the 0.5 minimum, since a dividing cell halves. The push lasts only as long as the gene is on."
+      },
+      {
+        "id": "OSMR",
+        "geneId": "OSMR",
+        "name": "OSMR",
+        "x": 1120,
+        "y": 64,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Perception",
+        "category": "Perception",
+        "description": "Reports the Osmolyn concentration in the water touching the cell. The receptor only works embedded in the membrane; copies left in the cytosol, secreted, or merely anchored give the cell no reading at all."
+      },
+      {
+        "id": "OSMP",
+        "geneId": "OSMP",
+        "name": "OSMP",
+        "x": 1120,
+        "y": 224,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Homeostasis",
+        "category": "Homeostasis",
+        "description": "Synthesises Osmoprotectin, which shields the cell from Osmolyn stress in proportion to how strongly the gene is expressed. Any copy the cell actually makes adds to that shield."
+      },
+      {
+        "id": "AQUP",
+        "geneId": "AQUP",
+        "name": "AQUP",
+        "x": 1216,
+        "y": 224,
+        "w": 56,
+        "h": 64,
+        "groupKey": "tree:Homeostasis",
+        "category": "Homeostasis",
+        "description": "A gated water channel in the cell membrane. Any transmembrane expression opens it fully, and extra copies do not move more water. The open channel lets water cross far faster than passive leakage, and closing it slows an unwanted flux. Immediate response, no storage."
       }
     ],
     "labels": [],

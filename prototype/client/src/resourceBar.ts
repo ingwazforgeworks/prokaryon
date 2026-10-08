@@ -1,12 +1,13 @@
 import { playCue } from "./uiSound";
 import {
-  QUICK_RESOURCE_IDS,
   cellResources,
   formatAmount,
   formatRate,
+  RATE_DISPLAY_FLOOR,
   mutationPointCount,
   onResources,
   populationCount,
+  quickResourceIds,
   storageFraction,
   type CellResource,
 } from "./resources";
@@ -69,18 +70,32 @@ export function initResourceBar(): void {
 
   const mutationChip = iconChip("Mutation points", "/ui/genome_viewer/dna_icon_32x32.png");
   const populationChip = chip("Population", "POP");
-  quick.append(mutationChip.root, populationChip.root);
+  const separator = document.createElement("span");
+  separator.className = "resource-sep";
+  separator.textContent = "|";
+  separator.setAttribute("aria-hidden", "true");
+  quick.append(mutationChip.root, populationChip.root, separator);
   quickValues.set("mutation", mutationChip.value);
   quickValues.set("population", populationChip.value);
 
-  for (const id of QUICK_RESOURCE_IDS) {
-    const resource = cellResources().find((entry) => entry.id === id);
-    if (!resource) throw new Error(`missing quick resource ${id}`);
-    const built = resourceChip(resource);
-    if (id === QUICK_RESOURCE_IDS[0]) built.root.classList.add("resource-split");
-    quick.append(built.root);
-    quickValues.set(id, built.value);
-  }
+  let quickIds: string[] = [];
+
+  const syncQuickResources = (): void => {
+    const next = quickResourceIds(cellResources());
+    if (next.length === quickIds.length && next.every((id, index) => id === quickIds[index])) return;
+    for (const id of quickIds) quickValues.delete(id);
+    for (const child of Array.from(quick.children)) {
+      if (child !== mutationChip.root && child !== populationChip.root && child !== separator) child.remove();
+    }
+    quickIds = next;
+    for (const id of next) {
+      const resource = cellResources().find((entry) => entry.id === id);
+      if (!resource) continue;
+      const built = resourceChip(resource);
+      quick.append(built.root);
+      quickValues.set(id, built.value);
+    }
+  };
 
   let shownGroup = "";
   for (const resource of cellResources()) {
@@ -97,6 +112,7 @@ export function initResourceBar(): void {
   const paint = (): void => {
     const points = mutationPointCount();
     const colony = populationCount();
+    syncQuickResources();
     writeChip(quickValues.get("mutation"), "Mutation points", points);
     writeChip(quickValues.get("population"), "Population", colony);
     for (const resource of cellResources()) {
@@ -110,7 +126,7 @@ export function initResourceBar(): void {
       row.held.textContent = held;
       row.capacity.textContent = capacity;
       row.rate.textContent = rate;
-      row.rate.dataset.sign = resource.rate > 0.05 ? "up" : resource.rate < -0.05 ? "down" : "flat";
+      row.rate.dataset.sign = resource.rate > RATE_DISPLAY_FLOOR ? "up" : resource.rate < -RATE_DISPLAY_FLOOR ? "down" : "flat";
       row.meter.style.width = `${storageFraction(resource.amount, resource.capacity) * 100}%`;
       row.root.setAttribute("aria-label", `${resource.name}, held ${held}, capacity ${capacity}, net ${rate}`);
     }

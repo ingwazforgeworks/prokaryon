@@ -161,10 +161,10 @@ export function motorFromConstructs(
 
 /**
  * Total protein expressed for one gene through its functional routes, before it
- * is distributed anywhere. Missing routes count nothing, and the total clamps
- * at full expression.
+ * is distributed anywhere. Missing routes count nothing. The sum is not clamped,
+ * so several strong constructs can add past one full expression.
  */
-export function geneExpressionLevel(
+export function geneExpressionSum(
   constructs: readonly FlagellinConstruct[],
   geneId: string,
   functionalRoutes: ReadonlySet<string>,
@@ -177,7 +177,20 @@ export function geneExpressionLevel(
     if (construct.routeId === null || !functionalRoutes.has(construct.routeId)) continue;
     total += producedAmount(construct, timeSeconds);
   }
-  return Math.min(1, total);
+  return total;
+}
+
+/**
+ * Total protein expressed for one gene through its functional routes, clamped
+ * at one full expression.
+ */
+export function geneExpressionLevel(
+  constructs: readonly FlagellinConstruct[],
+  geneId: string,
+  functionalRoutes: ReadonlySet<string>,
+  timeSeconds = 0,
+): number {
+  return Math.min(1, geneExpressionSum(constructs, geneId, functionalRoutes, timeSeconds));
 }
 
 /**
