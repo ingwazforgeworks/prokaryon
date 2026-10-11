@@ -1,0 +1,10 @@
+{
+  "id": "atp",
+  "title": "ATP",
+  "category": "Resources",
+  "meta": "Resources  ·  the cell's budget",
+  "body": [
+    "ATP is the store the resource bar leads with. A new cell begins with a full pool. Every construct that is actually making protein spends some of it, and a louder amount tile spends more. A starter genome spends it slowly.",
+    "ATP synthase is what refills it. The enzyme sits in the membrane, spends Fluxin, and returns two ATP for each unit, leaving Refluxin behind. A reductase has to recharge that Refluxin before the synthase can spend it again. An empty ATP pool stalls flagella and cilia. If the genome is still trying to spend, the cell begins to starve, and starvation wears integrity down until the cell dies. Filling the pool again stops the starvation, and the cell mends."
+  ]
+}

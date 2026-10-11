@@ -59,6 +59,12 @@ check(permeaseExpressionLevel([construct({ geneId: "SLFP" })], "SLFP") === 1, "a
 check(permeaseExpressionLevel([construct({ geneId: "SLFP", routeId: "SecretoryPeptide" })], "SLFP") === 0, "a secreted sulfex permease is not in the membrane and imports nothing");
 check(permeaseExpressionLevel([construct()], "SLFP") === 0, "ferron permease constructs do not count as sulfex permease");
 check(permeaseExpressionLevel([construct({ geneId: "SLFP" })], "FERP") === 0, "sulfex permease constructs do not count as ferron permease");
+check(permeaseExpressionLevel([construct({ geneId: "NITP" })], "NITP") === 1, "a hyperexpressed transmembrane nitrox permease reads full");
+check(permeaseExpressionLevel([construct({ geneId: "NITP", routeId: "SecretoryPeptide" })], "NITP") === 0, "a secreted nitrox permease is not in the membrane and imports nothing");
+check(permeaseExpressionLevel([construct({ geneId: "OXDP" })], "OXDP") === 1, "a hyperexpressed transmembrane oxidex permease reads full");
+check(permeaseExpressionLevel([construct({ geneId: "OXDP", routeId: null })], "OXDP") === 0, "an untagged oxidex permease stays cytosolic and imports nothing");
+check(permeaseExpressionLevel([construct({ geneId: "NITP" })], "OXDP") === 0, "nitrox permease constructs do not count as oxidex permease");
+check(permeaseExpressionLevel([construct({ geneId: "OXDP" })], "NITP") === 0, "oxidex permease constructs do not count as nitrox permease");
 
 // Uptake stepping: proportional to expression, concentration, and headroom.
 const rich = 0.5;

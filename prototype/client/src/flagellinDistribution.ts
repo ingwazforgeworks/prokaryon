@@ -1,3 +1,4 @@
+import { conditionalMultiplier } from "./receptorDrive";
 import type { FlagellumSite } from "./shape";
 
 /**
@@ -118,6 +119,10 @@ export type FlagellinConstruct = {
   /** Range promoters (OSCL) carry a min/max pair instead of a single amount. */
   amountMinId?: string | null;
   amountMaxId?: string | null;
+  /** Conditional promoters name the receptor they read and how they answer it. */
+  receptorId?: string | null;
+  responseId?: string | null;
+  threshold?: number | null;
 };
 
 export type FlagellinBySite = Record<FlagellumSite, number>;
@@ -160,6 +165,17 @@ export function motorFromConstructs(
 }
 
 /**
+ * A constitutive or oscillating promoter always runs. A conditional promoter
+ * runs only once it names a receptor and a response. Pass false to ignore
+ * conditional copies, which is how a receptor avoids counting a copy of
+ * itself that only exists when the signal is already on.
+ */
+export function constructPromoterRuns(construct: FlagellinConstruct, allowConditional = true): boolean {
+  if (EXPRESSED_PROMOTERS.has(construct.promoterId)) return true;
+  return allowConditional && construct.promoterId === "COND" && Boolean(construct.receptorId) && Boolean(construct.responseId);
+}
+
+/**
  * Total protein expressed for one gene through its functional routes, before it
  * is distributed anywhere. Missing routes count nothing. The sum is not clamped,
  * so several strong constructs can add past one full expression.
@@ -169,13 +185,14 @@ export function geneExpressionSum(
   geneId: string,
   functionalRoutes: ReadonlySet<string>,
   timeSeconds = 0,
+  allowConditional = true,
 ): number {
   let total = 0;
   for (const construct of constructs) {
     if (construct.geneId !== geneId) continue;
-    if (!EXPRESSED_PROMOTERS.has(construct.promoterId)) continue;
+    if (!constructPromoterRuns(construct, allowConditional)) continue;
     if (construct.routeId === null || !functionalRoutes.has(construct.routeId)) continue;
-    total += producedAmount(construct, timeSeconds);
+    total += construct.promoterId === "COND" ? conditionalAmount(construct) : producedAmount(construct, timeSeconds);
   }
   return total;
 }
@@ -189,8 +206,9 @@ export function geneExpressionLevel(
   geneId: string,
   functionalRoutes: ReadonlySet<string>,
   timeSeconds = 0,
+  allowConditional = true,
 ): number {
-  return Math.min(1, geneExpressionSum(constructs, geneId, functionalRoutes, timeSeconds));
+  return Math.min(1, geneExpressionSum(constructs, geneId, functionalRoutes, timeSeconds, allowConditional));
 }
 
 /**
@@ -221,8 +239,22 @@ function promoterPhase(promoterId: string, timeSeconds: number): number {
 
 /** Protein output of one construct. Unsimulated promoters produce nothing. */
 export function expressedAmount(construct: FlagellinConstruct, timeSeconds = 0): number {
+  if (construct.promoterId === "COND") return conditionalAmount(construct);
   if (!EXPRESSED_PROMOTERS.has(construct.promoterId)) return 0;
   return producedAmount(construct, timeSeconds);
+}
+
+/**
+ * Conditional output is the amount tile scaled by the receptor response.
+ * A promoter with no receptor, or a receptor that has not reported, yields
+ * nothing. Inhibition still needs a real reading of zero to leave the gene on.
+ */
+function conditionalAmount(construct: FlagellinConstruct): number {
+  if (!constructPromoterRuns(construct, true)) return 0;
+  const drive = conditionalMultiplier(construct);
+  if (!(drive > 0)) return 0;
+  const base = construct.amountId !== null ? (AMOUNT_YIELD[construct.amountId] ?? UNTAGGED_YIELD) : UNTAGGED_YIELD;
+  return base * drive;
 }
 
 /**
@@ -255,10 +287,10 @@ export function distributeBySite(
   const totals: FlagellinBySite = { antipolar: 0, polar: 0, lateral: 0, antilateral: 0 };
   for (const construct of constructs) {
     if (construct.geneId !== geneId) continue;
-    if (!EXPRESSED_PROMOTERS.has(construct.promoterId)) continue;
+    if (!constructPromoterRuns(construct, true)) continue;
     if (construct.routeId === null || !functionalRoutes.has(construct.routeId)) continue;
     const weights = (construct.siteId !== null ? SITE_WEIGHTS[construct.siteId] : undefined) ?? SPREAD_WEIGHTS;
-    const produced = producedAmount(construct, timeSeconds);
+    const produced = construct.promoterId === "COND" ? conditionalAmount(construct) : producedAmount(construct, timeSeconds);
     for (const site of SITES) totals[site] += produced * (weights[site] ?? 0);
   }
   return {
@@ -278,11 +310,12 @@ export function genomeCanExpressGene(
   constructs: readonly FlagellinConstruct[],
   geneId: string,
   functionalRoutes: ReadonlySet<string>,
+  allowConditional = true,
 ): boolean {
   return constructs.some(
     (construct) =>
       construct.geneId === geneId &&
-      EXPRESSED_PROMOTERS.has(construct.promoterId) &&
+      constructPromoterRuns(construct, allowConditional) &&
       construct.routeId !== null &&
       functionalRoutes.has(construct.routeId),
   );
@@ -301,7 +334,7 @@ export function genomeCanDriveFlagellin(constructs: readonly FlagellinConstruct[
   return constructs.some(
     (construct) =>
       construct.geneId === "FLGN" &&
-      EXPRESSED_PROMOTERS.has(construct.promoterId) &&
+      constructPromoterRuns(construct, true) &&
       construct.routeId !== null &&
       FUNCTIONAL_ROUTES.has(construct.routeId),
   );

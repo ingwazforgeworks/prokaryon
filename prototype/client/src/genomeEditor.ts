@@ -25,6 +25,7 @@ import {
   geneAcceptsSite,
   geneAcceptsCytosolicSite,
   illegalDraftSlots,
+  setDraftBinding,
   setDraftCode,
   setDraftName,
   tagRole,
@@ -37,16 +38,29 @@ import {
   unlockedPromoters,
   unlockedTags,
   updateEditedCassette,
+  type BindingSlot,
   type CatalogPart,
   type Draft,
   type ScalarResponse,
   type Slot,
 } from "./genomeState";
+import { OSCILLATION_PERIOD_SECONDS } from "./flagellinDistribution";
+import { formatNutrient } from "./environmentProbe";
+import { genomeExpressesOsmolynReceptor, osmolynDetectionLimit, osmolynReceptorSensitivity } from "./osmolynSense";
+import {
+  RECEPTORS,
+  RESPONSES,
+  SATURATION_MARKS,
+  markIdForThreshold,
+  receptorById,
+  responseById,
+  responseNeedsThreshold,
+} from "./receptorDrive";
 import { uiScale } from "./settings";
 import { subscribeUnlocks } from "./geneUnlocks";
 import { playCue } from "./uiSound";
 
-type TrayTab = "promoter" | "amount" | "gene" | "route" | "site";
+type TrayTab = "promoter" | "amount" | "gene" | "route" | "site" | "receptor";
 
 /** Pointer travel before a stage press counts as a pan instead of a click. */
 const PAN_DRAG_THRESHOLD = 4;
@@ -68,8 +82,9 @@ export function initGenomeEditor(): void {
   if (!root || !host) throw new Error("missing genome editor");
 
   let tab: TrayTab = "promoter";
-  const queries: Record<TrayTab, string> = { promoter: "", amount: "", gene: "", route: "", site: "" };
-  const scrolls: Record<TrayTab, number> = { promoter: 0, amount: 0, gene: 0, route: 0, site: 0 };
+  const queries: Record<TrayTab, string> = { promoter: "", amount: "", gene: "", route: "", site: "", receptor: "" };
+  const scrolls: Record<TrayTab, number> = { promoter: 0, amount: 0, gene: 0, route: 0, site: 0, receptor: 0 };
+  let seenPromoter: string | null | undefined;
   let selectedSlot: Slot | null = null;
   let selectedPart: CatalogPart | null = null;
   let status = "";
@@ -143,6 +158,7 @@ export function initGenomeEditor(): void {
     ["gene", "Genes"],
     ["route", "Destination"],
     ["site", "Position"],
+    ["receptor", "Receptors"],
   ] as const) {
     const button = document.createElement("button");
     button.type = "button";
@@ -379,6 +395,7 @@ export function initGenomeEditor(): void {
   panObserver.observe(stageWorld);
 
   const render = (): void => {
+    followPromoter();
     syncIdentity();
     renderTrack();
     renderInspect();
@@ -403,7 +420,7 @@ export function initGenomeEditor(): void {
     const value = getDraft();
     const range = amountRange(value.promoterId);
     const illegal = new Set(illegalDraftSlots(value));
-    track.replaceChildren(
+    const nodes: HTMLElement[] = [
       partModule("promoter", "Promoter", value.promoterId),
       joint("editor-joint-a"),
       range
@@ -415,8 +432,30 @@ export function initGenomeEditor(): void {
       tagModule("route", "Destination", value.routeId, false, illegal.has("route")),
       joint("editor-joint-d"),
       tagModule("site", "Position", value.siteId, (value.routeId === "CYTO" && !geneAcceptsCytosolicSite(value.geneId)) || !geneAcceptsSite(value.geneId), illegal.has("site")),
-    );
+    ];
+    if (value.promoterId === "COND") {
+      const receptor = receptorById(value.receptorId);
+      const response = responseById(value.responseId);
+      nodes.push(
+        bindingModule("receptor", "Receptor", receptor?.name ?? null, receptor?.icon ?? null),
+        joint("editor-joint-b"),
+        bindingModule("response", "Response", response?.name ?? null, response?.icon ?? null),
+      );
+      if (responseNeedsThreshold(value.responseId)) {
+        const markId = markIdForThreshold(value.threshold);
+        const mark = markId ? SATURATION_MARKS.find((entry) => entry.id === markId) : undefined;
+        nodes.push(
+          joint("editor-joint-c"),
+          bindingModule("threshold", "Level", mark?.name ?? null, mark?.icon ?? null),
+        );
+      }
+    }
+    track.replaceChildren(...nodes);
     behavior.textContent = behaviorLine(value);
+  }
+
+  function bindingModule(slot: BindingSlot, label: string, installed: string | null, iconUrl: string | null): HTMLElement {
+    return slotFrame(slot, label, installed, iconUrl);
   }
 
   /** Range promoters stack min over max so the gap between them sits on the row centerline. */
@@ -523,9 +562,10 @@ export function initGenomeEditor(): void {
     const activation = field("Activation", promoter?.activation ?? "None", promoter ? regulatoryIcon(promoter.id) : null);
     const localizationName = [route?.name, site?.name].filter((name): name is string => Boolean(name)).join(" · ");
     const localization = field("Localization", localizationName || "None", route ? regulatoryIcon(route.id) : site ? regulatoryIcon(site.id) : null);
-    inspect.append(frame, name, meta, copy, activation, ...amountInspectorFields(value), localization);
+    inspect.append(frame, name, meta, copy, activation, ...conditionalInspectorFields(value), ...amountInspectorFields(value), localization);
 
     response.replaceChildren();
+    if (value.promoterId === "COND") return;
     const curve = scalarResponse(value.promoterId);
     if (curve) {
       const heading = document.createElement("p");
@@ -542,11 +582,22 @@ export function initGenomeEditor(): void {
       note.className = "editor-copy";
       note.textContent = promoter.id === "CNST"
         ? "Fixed strength. This promoter has no input axis to graph."
-        : promoter.id === "COND"
-          ? "No scalar curve. Expression follows a receptor condition, which is not parameterized."
-          : "No scalar curve is stored for this promoter yet.";
+        : "No scalar curve is stored for this promoter yet.";
       response.append(note);
     }
+  }
+
+  function conditionalInspectorFields(value: Draft): HTMLParagraphElement[] {
+    if (value.promoterId !== "COND") return [];
+    const receptor = receptorById(value.receptorId);
+    const responseMode = responseById(value.responseId);
+    const markId = markIdForThreshold(value.threshold);
+    const mark = markId ? SATURATION_MARKS.find((entry) => entry.id === markId) : undefined;
+    return [
+      field("Receptor", receptor?.name ?? "None", receptor?.icon ?? null),
+      field("Response", responseMode?.name ?? "None", responseMode?.icon ?? null),
+      ...(responseNeedsThreshold(value.responseId) ? [field("Level", mark?.name ?? "None", mark?.icon ?? null)] : []),
+    ];
   }
 
   function amountInspectorFields(value: Draft): HTMLParagraphElement[] {
@@ -570,6 +621,9 @@ export function initGenomeEditor(): void {
     if (part.kind === "promoter") return "Promoter";
     if (part.kind === "amount") return "Amount";
     if (part.kind === "gene") return "Gene";
+    if (part.kind === "receptor") return "Receptor";
+    if (part.kind === "response") return "Response";
+    if (part.kind === "threshold") return "Level";
     return tagRole(part.id) === "site" ? "Position" : "Destination";
   }
 
@@ -603,6 +657,8 @@ export function initGenomeEditor(): void {
     if (part.kind === "promoter") {
       const promoter = promoterById(part.id);
       if (promoter) selected.append(field("Activation", promoter.activation, regulatoryIcon(promoter.id)));
+    } else if (part.kind === "receptor" || part.kind === "response" || part.kind === "threshold") {
+      selected.append(field(partKindLabel(part), part.summary, part.icon));
     } else if (part.kind === "tag") {
       const tag = tagById(part.id);
       if (tag) selected.append(field(partKindLabel(part), tag.destination, regulatoryIcon(tag.id)));
@@ -633,7 +689,9 @@ export function initGenomeEditor(): void {
     if (parts.length === 0) {
       const empty = document.createElement("p");
       empty.className = "editor-cards-empty";
-      empty.textContent = "No parts match";
+      empty.textContent = tab === "receptor" && queries.receptor.trim().length === 0 && !genomeExpressesOsmolynReceptor(getGenome())
+        ? "Express the Osmolyn Receptor in the membrane. This promoter can only read a receptor the cell is making."
+        : "No parts match";
       cards.append(empty);
       return;
     }
@@ -653,6 +711,8 @@ export function initGenomeEditor(): void {
         card.classList.add("is-dimmed");
         card.title = `${card.title} — this gene cannot take a position tag`;
       }
+      if (bindingChosen(part)) card.classList.add("is-chosen");
+      card.setAttribute("aria-pressed", String(bindingChosen(part)));
       const icon = document.createElement("img");
       icon.src = part.icon;
       icon.alt = "";
@@ -668,6 +728,20 @@ export function initGenomeEditor(): void {
         renderSelection();
         playCue("hover");
       });
+      if (part.kind === "receptor" || part.kind === "response" || part.kind === "threshold") {
+        card.classList.add("is-pick");
+        card.addEventListener("click", () => {
+          const slot: BindingSlot = part.kind === "receptor" ? "receptor" : part.kind === "response" ? "response" : "threshold";
+          if (!setDraftBinding(slot, part.id)) {
+            playCue("deny");
+            return;
+          }
+          selectedSlot = slot;
+          playCue("select");
+        });
+        cards.append(card);
+        continue;
+      }
       card.addEventListener("pointerdown", (event) => {
         if (event.button !== 0) return;
         event.stopPropagation();
@@ -732,16 +806,93 @@ export function initGenomeEditor(): void {
           ? unlockedAmounts()
           : tab === "gene"
             ? unlockedGenes()
-            : unlockedTags(tab);
+            : tab === "receptor"
+              ? receptorTrayParts()
+              : unlockedTags(tab);
     const query = queries[tab].trim().toLowerCase();
     if (query.length === 0) return all;
     return all.filter((part) => `${part.name} ${part.summary} ${part.description} ${part.id}`.toLowerCase().includes(query));
   }
 
   function syncTabs(): void {
+    const conditional = getDraft().promoterId === "COND";
     for (const [kind, button] of tabButtons) {
+      button.hidden = kind === "receptor" && !conditional;
       button.setAttribute("aria-selected", String(kind === tab));
     }
+  }
+
+  function followPromoter(): void {
+    const promoter = getDraft().promoterId;
+    if (promoter === "COND" && seenPromoter !== "COND" && tab !== "receptor") {
+      scrolls[tab] = cards.scrollLeft;
+      tab = "receptor";
+      search.value = queries.receptor;
+    } else if (promoter !== "COND" && tab === "receptor") {
+      tab = "promoter";
+      search.value = queries.promoter;
+    }
+    seenPromoter = promoter;
+  }
+
+  function osmolynPeak(): number {
+    const genome = getGenome();
+    return Math.max(
+      osmolynReceptorSensitivity(genome, 0),
+      osmolynReceptorSensitivity(genome, OSCILLATION_PERIOD_SECONDS / 2),
+    );
+  }
+
+  function receptorTrayParts(): CatalogPart[] {
+    const draft = getDraft();
+    const parts: CatalogPart[] = [];
+    if (genomeExpressesOsmolynReceptor(getGenome())) {
+      const peak = osmolynPeak();
+      const receptor = RECEPTORS[0];
+      if (receptor) {
+        parts.push({
+          id: receptor.id,
+          kind: "receptor",
+          name: receptor.name,
+          summary: `Detects from ${formatNutrient(osmolynDetectionLimit(peak))}`,
+          description: `${receptor.description} At the expression on this cell, it detects Osmolyn from ${formatNutrient(osmolynDetectionLimit(peak))} upward.`,
+          icon: receptor.icon,
+        });
+      }
+    }
+    if (draft.receptorId && receptorById(draft.receptorId)) {
+      for (const responseMode of RESPONSES) {
+        parts.push({
+          id: responseMode.id,
+          kind: "response",
+          name: responseMode.name,
+          summary: responseMode.summary,
+          description: responseMode.description,
+          icon: responseMode.icon,
+        });
+      }
+    }
+    if (responseNeedsThreshold(draft.responseId)) {
+      for (const mark of SATURATION_MARKS) {
+        parts.push({
+          id: mark.id,
+          kind: "threshold",
+          name: mark.name,
+          summary: mark.summary,
+          description: mark.description,
+          icon: mark.icon,
+        });
+      }
+    }
+    return parts;
+  }
+
+  function bindingChosen(part: CatalogPart): boolean {
+    const draft = getDraft();
+    if (part.kind === "receptor") return draft.receptorId === part.id;
+    if (part.kind === "response") return draft.responseId === part.id;
+    if (part.kind === "threshold") return markIdForThreshold(draft.threshold) === part.id;
+    return false;
   }
 
   function selectTab(next: TrayTab): void {
@@ -759,6 +910,7 @@ export function initGenomeEditor(): void {
     if (slot === "amount" || slot === "amount-min" || slot === "amount-max") return "amount";
     if (slot === "coding") return "gene";
     if (slot === "route") return "route";
+    if (slot === "receptor" || slot === "response" || slot === "threshold") return "receptor";
     return "site";
   }
 
@@ -957,7 +1109,10 @@ function slotAt(x: number, y: number): Slot | null {
     slot === "amount-max" ||
     slot === "coding" ||
     slot === "route" ||
-    slot === "site"
+    slot === "site" ||
+    slot === "receptor" ||
+    slot === "response" ||
+    slot === "threshold"
   ) {
     return slot;
   }

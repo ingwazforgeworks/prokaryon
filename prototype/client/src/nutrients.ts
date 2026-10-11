@@ -161,6 +161,61 @@ function lobeAmount(
   return (1 - side * side) * fade;
 }
 
+/**
+ * One free plume, same tongues as a deposit stain, written into a single channel.
+ * `scale` stretches length, width, and bend together so clouds can differ in size.
+ */
+export function paintScaledPlume(
+  values: Float32Array,
+  columns: number,
+  rows: number,
+  originX: number,
+  originY: number,
+  cell: number,
+  x: number,
+  y: number,
+  nx: number,
+  ny: number,
+  scale: number,
+  blocked?: (x: number, y: number) => boolean,
+): void {
+  const face: NutrientFace = { x, y, nx, ny, resource: "" };
+  const lobes = lobesFor(face);
+  for (const lobe of lobes) {
+    lobe.length *= scale;
+    lobe.half *= scale;
+    lobe.curve *= scale;
+    lobe.ripple *= scale;
+  }
+  const reach = 40 * scale;
+  const ox = x + nx * PLUME_LEAD * scale;
+  const oy = y + ny * PLUME_LEAD * scale;
+  const x0 = Math.max(0, Math.floor((ox - reach - originX) / cell));
+  const x1 = Math.min(columns - 1, Math.floor((ox + reach - originX) / cell));
+  const y0 = Math.max(0, Math.floor((oy - reach - originY) / cell));
+  const y1 = Math.min(rows - 1, Math.floor((oy + reach - originY) / cell));
+  for (let row = y0; row <= y1; row += 1) {
+    const py = originY + (row + 0.5) * cell;
+    const dy = py - oy;
+    for (let column = x0; column <= x1; column += 1) {
+      const px = originX + (column + 0.5) * cell;
+      if (blocked?.(px, py)) continue;
+      const dx = px - ox;
+      let amount = 0;
+      for (let i = 0; i < lobes.length; i += 1) {
+        const lobe = lobes[i];
+        const along = dx * lobe.dx + dy * lobe.dy;
+        const across = dx * lobe.px + dy * lobe.py;
+        const sample = lobeAmount(along, across, lobe.length, lobe.half, lobe.curve, lobe.ripple, lobe.waves, lobe.taper);
+        if (sample > amount) amount = sample;
+      }
+      if (amount <= 0) continue;
+      const index = row * columns + column;
+      if (amount > values[index]) values[index] = amount;
+    }
+  }
+}
+
 /** One channel per nutrient, 0 to 1. Overlapping faces of one kind keep the stronger value. */
 export function paintNutrients(
   values: Float32Array,
@@ -373,6 +428,20 @@ export class NutrientConcentrations {
     const live = this.values[index];
     const quiet = this.tail[index];
     return live > quiet ? live : quiet;
+  }
+
+  /** Colored lobe at this point, 0 to 1. The uncolored tail is left out. */
+  stainAt(x: number, y: number): number {
+    const column = Math.floor((x - NUTRIENT_ORIGIN_X) / NUTRIENT_CELL);
+    const row = Math.floor((y - NUTRIENT_ORIGIN_Y) / NUTRIENT_CELL);
+    if (column < 0 || row < 0 || column >= NUTRIENT_COLUMNS || row >= NUTRIENT_ROWS) return 0;
+    const index = (row * NUTRIENT_COLUMNS + column) * 4;
+    const stain = this.target;
+    const sulfex = stain[index];
+    const ferron = stain[index + 1];
+    const nitrox = stain[index + 2];
+    const osmolyn = stain[index + 3];
+    return Math.max(sulfex, ferron, nitrox, osmolyn);
   }
 
   /** Stores up to `amount` in that cell. Returns what actually fit. */

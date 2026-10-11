@@ -1,0 +1,10 @@
+{
+  "id": "osmotic-stress",
+  "title": "Osmotic stress",
+  "category": "Concepts",
+  "meta": "Concepts  ·  turgor and shrivel",
+  "body": [
+    "Osmotic stress runs from taut to shriveled. Thin water, poorer in Osmolyn than the middle of a plume, pushes the cell toward full turgor. Brine pulls it toward a shrivel. Full turgor holds. The lethal side is the shrivel, once it passes the point where the membrane starts to tear away from the wall.",
+    "Osmoprotectin limits that pull. Two hyperexpressed copies leave only a sliver of shrivel, and further copies leave that sliver in place. Aquaporin has to be transmembrane. In thin water its expression lets the tautness fall back toward even, and a full expression settles there. In brine the same expression deepens the shrivel, up to twice what the brine would do alone. The shield and the channel stack: Osmoprotectin limits the shrivel, and Aquaporin multiplies whatever remains."
+  ]
+}

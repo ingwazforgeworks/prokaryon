@@ -1,9 +1,10 @@
 import { createLyricScroll } from "./lyrics";
-import { resetUnlocks } from "./geneUnlocks";
+import { applyUnlockedIds, resetUnlocks } from "./geneUnlocks";
 import { initGeneMaker, openGeneMaker } from "./geneMaker";
-import { persistGenome, resetGenomeState } from "./genomeState";
+import { applySnapshot, persistGenome, resetGenomeState } from "./genomeState";
 import { playMarquee } from "./player";
-import { setMutationPoints, STARTING_ATP, STARTING_MUTATION_POINTS, updateResource } from "./resources";
+import { HARD_MUTATION_POINTS, HARD_STARTING_ATP, setMutationPoints, STARTING_ATP, STARTING_MUTATION_POINTS, updateResource } from "./resources";
+import { VIABLE_STARTING_FERRON, VIABLE_UNLOCKS, viableGenomeSnapshot } from "./starterGenome";
 import { gameSettings, onGameSettings, setGameSettings, uiScale } from "./settings";
 import { playCue } from "./uiSound";
 
@@ -46,7 +47,8 @@ const MICROBE_ANCHORS = [
 /** Exclusive source x of each frame's right edge, before the next cell begins. */
 const MICROBE_CROP_RIGHT = [623, 1224, 616, 1224, 618, 1222, 617, 1226] as const;
 
-type Phase = "boot" | "splash" | "menu" | "note" | "maker" | "lab";
+type Phase = "boot" | "splash" | "menu" | "note" | "start" | "maker" | "lab";
+type NewCellMode = "viable" | "hard";
 
 let phase: Phase = "boot";
 
@@ -77,6 +79,10 @@ export function initTitleScreen(): void {
   const geneMakerButton = document.querySelector<HTMLButtonElement>("#menu-gene-maker");
   const maker = document.querySelector<HTMLElement>("#gene-maker");
   const back = document.querySelector<HTMLButtonElement>("#menu-back");
+  const start = document.querySelector<HTMLElement>("#menu-start");
+  const startViable = document.querySelector<HTMLButtonElement>("#menu-start-viable");
+  const startHard = document.querySelector<HTMLButtonElement>("#menu-start-hard");
+  const startBack = document.querySelector<HTMLButtonElement>("#menu-start-back");
   const themeBack = document.querySelector<HTMLButtonElement>("#menu-theme-back");
   const themeNext = document.querySelector<HTMLButtonElement>("#menu-theme-next");
   const themeTitle = document.querySelector<HTMLElement>("#menu-theme-title");
@@ -92,7 +98,7 @@ export function initTitleScreen(): void {
   const microbe = document.querySelector<HTMLElement>("#menu-microbe");
   const discord = document.querySelector<HTMLButtonElement>("#menu-discord");
   const ui = document.getElementById("ui");
-  if (!root || !splash || !menu || !actions || !note || !noteTitle || !noteBody || !newCell || !loadCell || !settings || !credits || !geneMakerButton || !maker || !back || !wordmark || !microbe || !discord) {
+  if (!root || !splash || !menu || !actions || !note || !noteTitle || !noteBody || !newCell || !loadCell || !settings || !credits || !geneMakerButton || !maker || !back || !start || !startViable || !startHard || !startBack || !wordmark || !microbe || !discord) {
     throw new Error("missing title screen");
   }
   if (!themeBack || !themeNext || !themeTitle || !themeMarquee || !themeToggle || !themeIcon || !themeVolume || !themeVolumeIcon || !themeLevel || !themeVolumeWrap || !lyricHost) {
@@ -351,6 +357,7 @@ export function initTitleScreen(): void {
   const showActions = (): void => {
     phase = "menu";
     note.hidden = true;
+    start.hidden = true;
     maker.hidden = true;
     actions.hidden = false;
     microbe.classList.remove("is-away");
@@ -369,6 +376,7 @@ export function initTitleScreen(): void {
     noteBody.textContent = body;
     actions.hidden = true;
     note.hidden = false;
+    start.hidden = true;
     maker.hidden = true;
     microbe.classList.add("is-away");
     back.focus();
@@ -378,13 +386,14 @@ export function initTitleScreen(): void {
     phase = "maker";
     actions.hidden = true;
     note.hidden = true;
+    start.hidden = true;
     maker.hidden = false;
     microbe.classList.add("is-away");
     openGeneMaker();
   };
 
   const showMenu = (): void => {
-    if (phase === "menu" || phase === "note" || phase === "lab") return;
+    if (phase === "menu" || phase === "note" || phase === "start" || phase === "lab") return;
     clearSplash();
     phase = "menu";
     splash.inert = true;
@@ -409,14 +418,29 @@ export function initTitleScreen(): void {
     });
   };
 
-  const enterLab = (): void => {
+  const showStart = (): void => {
+    phase = "start";
+    actions.hidden = true;
+    note.hidden = true;
+    start.hidden = false;
+    maker.hidden = true;
+    microbe.classList.add("is-away");
+    startViable.focus();
+  };
+
+  const enterLab = (mode: NewCellMode): void => {
     if (phase === "lab") return;
     // New Cell always begins from a clean organism, whatever was saved last session.
     resetGenomeState();
-    void persistGenome();
     resetUnlocks();
-    setMutationPoints(STARTING_MUTATION_POINTS);
-    updateResource("atp", { amount: STARTING_ATP, rate: 0 });
+    if (mode === "viable") {
+      applySnapshot(viableGenomeSnapshot());
+      applyUnlockedIds(VIABLE_UNLOCKS);
+    }
+    void persistGenome();
+    setMutationPoints(mode === "viable" ? STARTING_MUTATION_POINTS : HARD_MUTATION_POINTS);
+    updateResource("atp", { amount: mode === "viable" ? STARTING_ATP : HARD_STARTING_ATP, rate: 0 });
+    updateResource("ferron", { amount: mode === "viable" ? VIABLE_STARTING_FERRON : 0, rate: 0 });
     phase = "lab";
     window.cancelAnimationFrame(microbeRaf);
     theme.pause();
@@ -465,7 +489,7 @@ export function initTitleScreen(): void {
   };
   reopenMainMenu = restoreMenu;
 
-  for (const button of [newCell, loadCell, settings, credits, geneMakerButton, back, discord, themeBack, themeNext, themeToggle, themeVolume]) {
+  for (const button of [newCell, loadCell, settings, credits, geneMakerButton, back, startViable, startHard, startBack, discord, themeBack, themeNext, themeToggle, themeVolume]) {
     button.addEventListener("pointerenter", () => playCue("hover"));
   }
   themeBack.addEventListener("click", () => {
@@ -516,7 +540,19 @@ export function initTitleScreen(): void {
   });
   newCell.addEventListener("click", () => {
     playCue("chime");
-    enterLab();
+    showStart();
+  });
+  startViable.addEventListener("click", () => {
+    playCue("chime");
+    enterLab("viable");
+  });
+  startHard.addEventListener("click", () => {
+    playCue("select");
+    enterLab("hard");
+  });
+  startBack.addEventListener("click", () => {
+    playCue("back");
+    showActions();
   });
   loadCell.addEventListener("click", () => {
     playCue("reject");
@@ -565,7 +601,13 @@ export function initTitleScreen(): void {
       if (target instanceof Element && menu.contains(target) && target.closest("button, input, textarea, select")) return;
       event.preventDefault();
       playCue("chime");
-      enterLab();
+      showStart();
+      return;
+    }
+    if (phase === "start" && event.key === "Escape" && !event.repeat) {
+      event.preventDefault();
+      playCue("back");
+      showActions();
       return;
     }
     if (phase === "note" && event.key === "Escape" && !event.repeat) {

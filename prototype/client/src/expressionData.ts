@@ -109,7 +109,7 @@ export interface ExpressionQuery {
 }
 
 const HISTORY_LIMIT_SECONDS = 600;
-const HISTORY_LIMIT_COUNT = 1500;
+const HISTORY_LIMIT_COUNT = 4000;
 const PREVIEW_STEPS = 96;
 
 const genesById = new Map<string, GeneRecord>(GENES.map((gene) => [gene.id, gene]));
@@ -134,9 +134,8 @@ export function expressionEntryId(cellId: number, geneId: string, copyIndex: num
 }
 
 /**
- * Future expression telemetry connects here.
- * Samples are stored per cell and genome entry. Nothing in the lab publishes them yet,
- * so live mode stays empty until a recorder calls this. History is not backfilled.
+ * Live expression history for one cell and genome entry.
+ * The lab records a sample a few times a second. History is not backfilled.
  */
 export function publishExpressionSample(cellId: number, entryId: string, sample: ExpressionSampleInput): void {
   const key = historyKey(cellId, entryId);

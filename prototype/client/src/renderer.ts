@@ -6,11 +6,11 @@ import { bodyNormal, bodySignedDistance, ciliaStrokeSign, curvedHalfExtents, eff
 import { Terrain, type PackedPointLights, type Pose, type TerrainFeature } from "./terrain";
 import { columnAttenuation, uvColumnAttenuation } from "./light";
 import { NutrientField, type NutrientKind } from "./nutrients";
-import { OxidexField } from "./oxidex";
+import { OxidexCloudField } from "./oxidexClouds";
 import { pressureAt, PressureField } from "./pressure";
 import { SulfexField } from "./sulfex";
 import { TemperatureField } from "./temperature";
-import { TEXEL_COLUMNS, TEXEL_ORIGIN_X, TEXEL_ORIGIN_Y, TEXEL_ROWS, TEXEL_SIZE, TEXEL_SPAN_X, TEXEL_SPAN_Y, texelAt } from "./texels";
+import { TEXEL_COLUMNS, TEXEL_ORIGIN_X, TEXEL_ORIGIN_Y, TEXEL_ROWS, TEXEL_SIZE, TEXEL_SPAN_X, TEXEL_SPAN_Y } from "./texels";
 import type { CellSnapshot, PilusFragmentSnapshot, ViewSnapshot } from "./types";
 
 const LOGICAL_WIDTH = 640;
@@ -1398,6 +1398,7 @@ export class CellRenderer {
   private readonly presentProgram: WebGLProgram;
   private readonly background: BackgroundPass;
   private readonly nutrients: NutrientField;
+  private readonly oxidexClouds: OxidexCloudField;
   private readonly terrain: Terrain;
   private readonly bubbles: BubbleField;
   private readonly decorations: DecorationField;
@@ -1427,7 +1428,6 @@ export class CellRenderer {
   private readonly temperatureField = new TemperatureField();
   private readonly oxidexTexture: WebGLTexture;
   private readonly oxidexBytes = new Uint8Array(TEXEL_COLUMNS * TEXEL_ROWS * 4);
-  private readonly oxidexField = new OxidexField();
   private readonly sulfexTexture: WebGLTexture;
   private readonly sulfexBytes = new Uint8Array(TEXEL_COLUMNS * TEXEL_ROWS * 4);
   private readonly sulfexField = new SulfexField();
@@ -1461,6 +1461,8 @@ export class CellRenderer {
   private fieldOverlay: FieldOverlay | null = null;
   private showNutrients = false;
   private sunBrightness = 1;
+  private night = false;
+  private surfaceTime = 0;
   /** Temperature and pressure blends are reused until the pointer moves a texel or this interval passes. */
   private fieldProbeAt = 0;
   private fieldProbeX = 0;
@@ -1503,6 +1505,7 @@ export class CellRenderer {
     );
     this.background = new BackgroundPass(gl, (program) => this.drawQuad(program));
     this.nutrients = new NutrientField(gl);
+    this.oxidexClouds = new OxidexCloudField(gl);
     this.terrain = new Terrain(gl);
     this.bubbles = new BubbleField(gl);
     this.decorations = new DecorationField(gl);
@@ -1588,6 +1591,14 @@ export class CellRenderer {
 
   setSunBrightness(brightness: number): void {
     this.sunBrightness = brightness;
+  }
+
+  setNight(night: boolean): void {
+    this.night = night;
+  }
+
+  setSurfaceTime(time: number): void {
+    this.surfaceTime = time;
   }
 
   setCellScale(scale: number): void {
@@ -1698,7 +1709,7 @@ export class CellRenderer {
     intensity: number,
     camera: [number, number],
     pilusFragments: readonly PilusFragmentSnapshot[] = [],
-    debris: CellDebris | null = null,
+    debris: readonly CellDebris[] = [],
   ): void {
     const gl = this.gl;
     const ordered = [...cells].sort((a, b) => a.y - b.y || a.id - b.id);
@@ -1726,11 +1737,9 @@ export class CellRenderer {
       this.terrain.rockTexels(),
       this.terrain.rockStamp(),
     );
-    this.oxidexField.advance(dt);
     this.sulfexField.advance(dt);
     this.syncTemperatureTexture();
     this.syncParticleTemperature(dt);
-    this.syncOxidexTexture();
     this.syncSulfexTexture();
     this.syncPressureTexture();
 
@@ -1743,7 +1752,11 @@ export class CellRenderer {
     const lights = this.terrain.packPointLights(viewBounds);
     this.appendFluorLights(lights, ordered, viewBounds);
     const deposits = this.terrain.depositFaces();
-    this.nutrients.advance(dt, deposits.generation, deposits.faces, (x, y) => this.terrain.solidAt(x, y));
+    const solidAt = (x: number, y: number): boolean => this.terrain.solidAt(x, y);
+    this.nutrients.advance(dt, deposits.generation, deposits.faces, solidAt);
+    this.oxidexClouds.sync(deposits.generation, (x, y) => this.nutrients.concentrations.stainAt(x, y), solidAt);
+    this.oxidexClouds.advance(dt);
+    this.syncOxidexTexture();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.worldFbo);
     gl.viewport(0, 0, this.logicalWidth, this.logicalHeight);
     gl.disable(gl.DEPTH_TEST);
@@ -1756,12 +1769,15 @@ export class CellRenderer {
       view.pixels_per_unit,
       intensity,
       this.sunBrightness,
+      this.night,
+      this.surfaceTime,
       dt,
       lights,
       this.particleTemperatureTexture,
       this.oxidexTexture,
       this.sulfexTexture,
       this.nutrients.texture,
+      this.oxidexClouds.texture,
       this.terrain.shoreFieldData(),
       this.showNutrients,
     );
@@ -1779,8 +1795,8 @@ export class CellRenderer {
     this.membraneTime = (this.membraneTime + Math.min(dt, 0.05)) % 1000;
     this.drawBodies(ordered, halfView, snapped, pixelWorld, light, intensity, lights);
     gl.disable(gl.DEPTH_TEST);
-    if (debris && debris.alpha > 0.004 && debris.scale > 0 && debris.pieces.length > 0) {
-      this.drawDebris(debris, halfView, snapped);
+    for (const burst of debris) {
+      if (burst.alpha > 0.004 && burst.scale > 0 && burst.pieces.length > 0) this.drawDebris(burst, halfView, snapped);
     }
 
     this.bubbles.sync(this.terrain.bubblePoints(), this.terrain.bubbleGeneration());
@@ -1931,10 +1947,38 @@ export class CellRenderer {
     return removed;
   }
 
+  /** Dissolved oxidex at a world point, 0 to 1. */
+  oxidexRead(x: number, y: number): number {
+    return this.oxidexClouds.read(x, y);
+  }
+
+  /** Water temperature at a world point in °C, blended across neighboring texels. Null outside the field. */
+  temperatureRead(x: number, y: number): number | null {
+    return sampleTexelField(this.temperatureField.values, x, y);
+  }
+
+  /**
+   * Removes up to `fraction` of dissolved oxidex from the water around a world
+   * point, spread like a nutrient drawdown: most of it under the cell, a thin
+   * cross on the neighbors.
+   */
+  oxidexTake(x: number, y: number, fraction: number): number {
+    const shares: ReadonlyArray<readonly [number, number, number]> = [
+      [0, 0, 0.6],
+      [1, 0, 0.1],
+      [-1, 0, 0.1],
+      [0, 1, 0.1],
+      [0, -1, 0.1],
+    ];
+    let removed = 0;
+    for (const [dx, dy, share] of shares) {
+      removed += this.oxidexClouds.take(x + dx, y + dy, fraction * share);
+    }
+    return removed;
+  }
+
   /** Nutrient stain, oxidex, heat, pressure, sunlight, and UV at a world point. */
   probeEnvironment(x: number, y: number): EnvironmentReading {
-    const texel = texelAt(x, y);
-    const cell = texel ? texel.row * TEXEL_COLUMNS + texel.column : -1;
     const concentrations = this.nutrients.concentrations;
     const column = this.columnSample(x, y);
     return {
@@ -1947,7 +1991,7 @@ export class CellRenderer {
         { name: "Ferron", amount: concentrations.read("ferron", x, y) },
         { name: "Nitrox", amount: concentrations.read("nitrox", x, y) },
         { name: "Osmolyn", amount: concentrations.read("osmolyn", x, y) },
-        { name: "Oxidex", amount: cell >= 0 ? this.oxidexField.values[cell] : 0 },
+        { name: "Oxidex", amount: this.oxidexClouds.read(x, y) },
       ],
     };
   }
@@ -2399,7 +2443,7 @@ export class CellRenderer {
   private drawConcentration(halfView: [number, number], camera: [number, number], overlay: Exclude<FieldOverlay, "temperature">): void {
     const gl = this.gl;
     const program = this.concentrationProgram;
-    const tint = overlay === "oxidex" ? [0.78, 0.84, 0.86] : overlay === "sulfex" ? [0.86, 0.72, 0.28] : [0.32, 0.5, 0.9];
+    const tint = overlay === "oxidex" ? [0.90, 0.55, 0.52] : overlay === "sulfex" ? [0.86, 0.72, 0.28] : [0.32, 0.5, 0.9];
     const texture = overlay === "oxidex" ? this.oxidexTexture : overlay === "sulfex" ? this.sulfexTexture : this.pressureTexture;
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
@@ -2479,9 +2523,9 @@ export class CellRenderer {
   }
 
   private syncOxidexTexture(): void {
-    if (this.oxidexField.revision === this.oxidexRevision) return;
-    this.oxidexRevision = this.oxidexField.revision;
-    const values = this.oxidexField.values;
+    if (this.oxidexClouds.revision === this.oxidexRevision) return;
+    this.oxidexRevision = this.oxidexClouds.revision;
+    const values = this.oxidexClouds.coarse;
     const bytes = this.oxidexBytes;
     for (let index = 0; index < values.length; index += 1) {
       const scaled = Math.round(values[index] * 255);
@@ -2566,7 +2610,7 @@ export class CellRenderer {
       this.fieldOverlay === "temperature"
         ? this.temperatureField.values
         : this.fieldOverlay === "oxidex"
-          ? this.oxidexField.values
+          ? this.oxidexClouds.coarse
           : this.fieldOverlay === "sulfex"
             ? this.sulfexField.values
             : this.pressureField.values;

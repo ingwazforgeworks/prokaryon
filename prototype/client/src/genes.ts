@@ -1,3 +1,9 @@
+/**
+ * Runtime catalog: the name, category, and description the game shows.
+ * Destination rules live in geneLocalization.ts. Mutation-point prices live
+ * in geneUnlocks.ts. public/gene-data.json is the Gene Maker's authoring
+ * file and is not read by the simulation.
+ */
 export type GeneRecord = {
   id: string;
   name: string;
@@ -10,13 +16,13 @@ export const GENES: GeneRecord[] = [
     "id": "ATPS",
     "name": "ATP Synthase",
     "category": "Metabolism",
-    "description": "Converts Fluxin into ATP, supplying the energy needed to maintain the cell, express genes, grow, and perform other cellular functions."
+    "description": "Sits in the membrane and spends Fluxin to make ATP, two ATP for each Fluxin. The spent carrier comes back as Refluxin. The part has to be tagged TransmembraneSignal."
   },
   {
     "id": "ANAB",
     "name": "Anabolase",
     "category": "Reproduction",
-    "description": "Assembles Biomass from carbon, nitrogen and energy. The gene that converts a well-fed cell into a larger cell, and therefore the gene that gates Division and the mutation-point income that follows from it."
+    "description": "Grows the cell while it is expressed."
   },
   {
     "id": "AZOH",
@@ -27,7 +33,7 @@ export const GENES: GeneRecord[] = [
   {
     "id": "BFP",
     "name": "Blue Fluorescent Protein",
-    "category": "Morphology",
+    "category": "Pigmentation",
     "description": "Emits blue light from chemical energy. The glow is the cell's own, and it is independent of the body colour its pigments give it."
   },
   {
@@ -37,15 +43,27 @@ export const GENES: GeneRecord[] = [
     "description": "Concentrates dissolved inorganic carbon inside the cell. Carbex is abundant almost everywhere but too dilute to fix at a useful rate, so this transporter exists to raise the internal concentration rather than to gain access to something unavailable."
   },
   {
+    "id": "CBXR",
+    "name": "Carbex Reductase",
+    "category": "Metabolism",
+    "description": "A terminal respiratory module for carbon-rich anoxic water. Passes electrons to dissolved Carbex instead of Oxidex, giving a moderate ATP yield in places the better acceptor never reaches."
+  },
+  {
     "id": "CRTS",
     "name": "Carotin Synthase",
-    "category": "Metabolism",
+    "category": "Pigmentation",
     "description": "Builds Carotin, the pigment that harvests blue light and safely discards energy the cell cannot use. Both an antenna and a safety valve."
+  },
+  {
+    "id": "CRYP",
+    "name": "Cryptochrome Synthase",
+    "category": "Pigmentation",
+    "description": "Builds Cryptochrome, the deep blue body pigment. Neither an antenna nor a chelator: the one pigment whose only job is colour, and the darkest shade a cell can wear."
   },
   {
     "id": "CHLS",
     "name": "Chlorin Synthase",
-    "category": "Metabolism",
+    "category": "Pigmentation",
     "description": "Builds Chlorin, the primary light-harvesting pigment. The only pigment efficient enough to drive a reaction centre hard enough to produce Reducin, and therefore a hard prerequisite for autotrophy."
   },
   {
@@ -64,19 +82,25 @@ export const GENES: GeneRecord[] = [
     "id": "FERR",
     "name": "Ferron Reductase",
     "category": "Metabolism",
-    "description": "A terminal respiratory module for iron-bearing anoxic water. Passes electrons to dissolved Ferron instead of Oxidex, giving a moderate ATP yield in places the better acceptor never reaches. Unlike Ferracite Reductase (FCTR), it never needs to touch the solid mineral."
+    "description": "Burns stored Ferron to recharge Refluxin into Fluxin. ATP synthase spends that Fluxin and returns the carrier as Refluxin."
+  },
+  {
+    "id": "FSXR",
+    "name": "Ferrosulfex Reductase",
+    "category": "Metabolism",
+    "description": "Burns stored Ferron and Sulfex together and recharges three Refluxin into Fluxin for each pair of fuel units. Once ATP synthase spends that Fluxin, the meal yields more ATP than burning the two fuels apart."
   },
   {
     "id": "FERP",
     "name": "Ferron Permease",
     "category": "Metabolism",
-    "description": "Transports Ferron into the cell for metabolism."
+    "description": "Allows Ferron to be imported into the cell."
   },
   {
     "id": "FLUX",
     "name": "Fluxin Synthase",
     "category": "Metabolism",
-    "description": "Extracts energy from intracellular Glycon, Lipron, Nitrox, Sulfex, or Ferron, converting these fuels into Fluxin for ATP production with ATP Synthase (ATPS)"
+    "description": "Sets the size of the cell's Fluxin pool. A larger pool carries the cell through lulls in fuel or expression. New carrier arrives as Refluxin, and a reductase has to recharge it before ATP synthase can spend it."
   },
   {
     "id": "GLYH",
@@ -111,7 +135,7 @@ export const GENES: GeneRecord[] = [
   {
     "id": "GFP",
     "name": "Green Fluorescent Protein",
-    "category": "Morphology",
+    "category": "Pigmentation",
     "description": "Emits green light from chemical energy. The glow is the cell's own, and it is independent of the body colour its pigments give it."
   },
   {
@@ -119,6 +143,12 @@ export const GENES: GeneRecord[] = [
     "name": "Lipron Hydrolase",
     "category": "Metabolism",
     "description": "Breaks down biological debris outside the cell, releasing accessible Lipron. The liberated nutrient can be absorbed by the producer or scavenged by nearby cells."
+  },
+  {
+    "id": "LIPR",
+    "name": "Lipron Reductase",
+    "category": "Metabolism",
+    "description": "A terminal respiratory module for lipid-rich anoxic water. Passes electrons to dissolved Lipron instead of Oxidex, giving a moderate ATP yield in places the better acceptor never reaches."
   },
   {
     "id": "LIPP",
@@ -136,13 +166,25 @@ export const GENES: GeneRecord[] = [
     "id": "NITP",
     "name": "Nitrox Permease",
     "category": "Metabolism",
-    "description": "Transports Nitrox into the cell"
+    "description": "Allows Nitrox to be imported into the cell."
+  },
+  {
+    "id": "NITR",
+    "name": "Nitrox Reductase",
+    "category": "Metabolism",
+    "description": "A terminal respiratory module for nitrogen-bearing anoxic water. Passes electrons to dissolved Nitrox instead of Oxidex, giving a moderate ATP yield in places the better acceptor never reaches."
+  },
+  {
+    "id": "NXDR",
+    "name": "Nitroxidex Reductase",
+    "category": "Metabolism",
+    "description": "Burns stored Nitrox and Oxidex together and recharges three Refluxin into Fluxin for each pair of fuel units. Once ATP synthase spends that Fluxin, the meal yields more ATP than a single-fuel charge."
   },
   {
     "id": "OXDP",
     "name": "Oxidex Permease",
     "category": "Metabolism",
-    "description": "A channel that increases the rate at which Oxidex enters the cell, raising the ceiling on aerobic respiration in water where the oxidant is scarce."
+    "description": "Allows Oxidex to be imported into the cell."
   },
   {
     "id": "OXDR",
@@ -153,25 +195,25 @@ export const GENES: GeneRecord[] = [
   {
     "id": "PHOR",
     "name": "Photorhodin",
-    "category": "Metabolism",
+    "category": "Pigmentation",
     "description": "A light-driven pump built from one protein and one cheap pigment. Absorbs Light and produces Fluxin directly, with no antenna complex, no reaction centre, and no reducing power. The cheapest way to get energy out of light and the most limited."
   },
   {
     "id": "PHYS",
     "name": "Phycin Synthase",
-    "category": "Metabolism",
+    "category": "Pigmentation",
     "description": "Builds Phycin, a large accessory antenna that harvests the green and orange light Chlorin leaves behind. The specialist pigment for living in somebody else's shadow."
   },
   {
     "id": "RXNC",
     "name": "Reaction Center",
-    "category": "Metabolism",
+    "category": "Pigmentation",
     "description": "A photochemical complex that converts harvested light energy into both Fluxin and Reducin. The only route in the catalog that supplies energy and reducing power together, and therefore the only route to full autotrophy."
   },
   {
     "id": "RFP",
     "name": "Red Fluorescent Protein",
-    "category": "Morphology",
+    "category": "Pigmentation",
     "description": "Emits red light from chemical energy. The glow is the cell's own, and it is independent of the body colour its pigments give it."
   },
   {
@@ -183,7 +225,7 @@ export const GENES: GeneRecord[] = [
   {
     "id": "RHDS",
     "name": "Rhodin Synthase",
-    "category": "Metabolism",
+    "category": "Pigmentation",
     "description": "Builds Rhodin, the cheapest pigment in the game. One small molecule that can either drive a light pump directly or give a Photochrome (PCHR) receptor its mid-spectrum sensitivity."
   },
   {
@@ -195,20 +237,20 @@ export const GENES: GeneRecord[] = [
   {
     "id": "SIDS",
     "name": "Siderin Synthase",
-    "category": "Homeostasis",
+    "category": "Pigmentation",
     "description": "Secretes Siderin, a chelator that binds mineral iron and carries it into solution. Frees Ferron from Ferracite at a distance, without the cell needing to touch the mineral."
   },
   {
     "id": "SLFP",
     "name": "Sulfex Permease",
     "category": "Metabolism",
-    "description": "Transports Sulfex into the cell."
+    "description": "Allows Sulfex to be imported into the cell."
   },
   {
     "id": "SLFR",
     "name": "Sulfex Reductase",
     "category": "Metabolism",
-    "description": "A terminal respiratory module for anoxic water. Passes electrons to Sulfex instead of Oxidex, giving a moderate ATP yield in places the better acceptor never reaches."
+    "description": "Burns stored Sulfex to recharge Refluxin into Fluxin, on the same terms as Ferron Reductase."
   },
   {
     "id": "THNL",
@@ -219,7 +261,7 @@ export const GENES: GeneRecord[] = [
   {
     "id": "YFP",
     "name": "Yellow Fluorescent Protein",
-    "category": "Morphology",
+    "category": "Pigmentation",
     "description": "Emits yellow light from chemical energy. The glow is the cell's own, and it is independent of the body colour its pigments give it."
   },
   {
@@ -232,7 +274,7 @@ export const GENES: GeneRecord[] = [
     "id": "AQUP",
     "name": "Aquaporin",
     "category": "Homeostasis",
-    "description": "A gated water channel in the cell membrane. Any transmembrane expression opens it fully, and extra copies do not move more water. The open channel lets water cross far faster than passive leakage, and closing it slows an unwanted flux. Immediate response, no storage."
+    "description": "Lets water cross the membrane much faster."
   },
   {
     "id": "CSP",
@@ -274,7 +316,7 @@ export const GENES: GeneRecord[] = [
     "id": "OSMP",
     "name": "Osmoprotectin Synthase",
     "category": "Homeostasis",
-    "description": "Synthesises Osmoprotectin, which shields the cell from Osmolyn stress in proportion to how strongly the gene is expressed. Any copy the cell actually makes adds to that shield."
+    "description": "Shields the cell from osmolyn stress."
   },
   {
     "id": "OSMS",
@@ -309,73 +351,73 @@ export const GENES: GeneRecord[] = [
   {
     "id": "ADHN",
     "name": "Adhesin",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Surface proteins that make the cell stick to debris, minerals, and terrain. Once attached, the cell stops being carried by Flow and stays where it is. It does not bind other cells."
   },
   {
     "id": "COHS",
     "name": "Cohesin",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Surface proteins that make the cell stick to other cells of the same type. The clump holds in open water, and the protein ignores debris, minerals, terrain, and every other type of cell."
   },
   {
     "id": "LUBR",
     "name": "Lubricin",
-    "category": "Morphology",
-    "description": "Coats the envelope in a slick film that sheds drag and keeps debris from catching. The cell slides past surfaces — and they slide off it — instead of sticking."
+    "category": "Cell Shape",
+    "description": "Lets the cell slide along surfaces."
   },
   {
     "id": "BALA",
     "name": "Ballastin",
     "category": "Motility",
-    "description": "Packages available reserves into dense ballast granules. The calories stay in the cell, and the granules raise its density."
+    "description": "Makes the cell sink through the water."
   },
   {
     "id": "BDEL",
     "name": "Bdellase",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Attaches to another cell, breaches its envelope, and digests its contents in place. The only gene in the catalog that treats another player's cell as a food source rather than as competition."
   },
   {
     "id": "BUOY",
     "name": "Buoyin",
     "category": "Motility",
-    "description": "Builds hollow protein compartments that lower the cell's density. The cell drifts along the depth axis with no motor, no steering and no energy cost once the vesicles are made."
+    "description": "Makes the cell rise through the water."
   },
   {
     "id": "CAPS",
     "name": "Capsulin Synthase",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Lays down a Capsulin polymer layer on the cell's own surface. Protection that travels with the cell and shelters nobody else."
   },
   {
     "id": "CRST",
     "name": "Crescentin",
-    "category": "Morphology",
-    "description": "Bends the cell's long axis into a crescent. The curve changes how the body meets a surface and how it moves through water, without changing how much cell there is."
+    "category": "Cell Shape",
+    "description": "Bends the cell into a crescent."
   },
   {
     "id": "CRYS",
     "name": "Crystallin",
-    "category": "Morphology",
-    "description": "Secretes a protein that polymerises into a crystal lattice over the envelope. Any expression at all armours the cell in crystal, and the stronger the expression the thicker the lattice grows."
+    "category": "Cell Shape",
+    "description": "Coats the cell in crystal."
   },
   {
     "id": "EFFI",
     "name": "Effector Injector",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "A contact-dependent apparatus that delivers a protein payload directly into an adjacent cell. Precise, expensive, and dependent on sustained contact the player cannot command."
   },
   {
     "id": "ELGN",
     "name": "Elongin",
-    "category": "Morphology",
-    "description": "Stretches the cell along its long axis, raising the aspect ratio. The same volume becomes longer and narrower, so surface area rises and the cell holds a heading more firmly."
+    "category": "Cell Shape",
+    "description": "Stretches the cell longer and narrower."
   },
   {
     "id": "ENVT",
     "name": "Envelope Thickener",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Reinforces the cell envelope, making it harder for toxins to enter and harder for predators to breach. Armour built out of the same material the cell would otherwise grow with."
   },
   {
@@ -387,74 +429,74 @@ export const GENES: GeneRecord[] = [
   {
     "id": "GRTN",
     "name": "Girthin",
-    "category": "Morphology",
-    "description": "Thickens the cell across its short axis, lowering the aspect ratio. The same volume becomes shorter and wider, so there is less surface per volume and a shorter lever arm for shear to break."
+    "category": "Cell Shape",
+    "description": "Makes the cell shorter and wider."
   },
   {
     "id": "ISPR",
     "name": "Isoprene Synthase",
-    "category": "Morphology",
-    "description": "Secretes the rubbery polymer that stiffens into an isoprene coat over the envelope. Any expression at all builds the coat, and the stronger the expression the thicker it grows."
+    "category": "Cell Shape",
+    "description": "Coats the cell in isoprene."
   },
   {
     "id": "LYSS",
     "name": "Lysin Synthase",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Secretes Lysin, an envelope-damaging agent that diffuses through the surrounding water. Harms every susceptible cell in range without distinguishing targets, including the producer's own kin."
   },
   {
     "id": "MTXS",
     "name": "Matrixin Synthase",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Secretes Matrixin, the polymer that accumulates into a biofilm. Unlike other secretions it does not drift away, so a group expressing it builds a persistent structure with measurably different transport properties from the water around it."
   },
   {
     "id": "SHPD",
     "name": "Shape Determinant",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Sets the cell's body plan: compact sphere, elongated rod, or extended filament. Changes surface area, drag, collision behaviour and how the cell sits against a surface, all at once."
   },
   {
     "id": "SIZR",
     "name": "Size Regulator",
-    "category": "Morphology",
+    "category": "Cell Shape",
     "description": "Sets the Biomass threshold at which the cell commits to Division. Small cells divide often and cheaply; large cells divide rarely and carry more reserves."
   },
   {
     "id": "TPRN",
     "name": "Taperin",
-    "category": "Morphology",
-    "description": "A cytosolic scaffold that narrows the cell exactly where it gathers. Tagged to a pole or a side it pinches that end alone; expressed without a position tag it thins the whole body at once."
+    "category": "Cell Shape",
+    "description": "Narrows the cell where the protein gathers."
   },
   {
     "id": "FLGM",
     "name": "Flagellar Motor Protein",
     "category": "Motility",
-    "description": "The rotary motor and stator complex that spins a flagellum, converting ATP directly into thrust. Motion is a continuous expense."
+    "description": "Spins a flagellum to push the cell."
   },
   {
     "id": "FLGN",
     "name": "Flagellin",
     "category": "Motility",
-    "description": "Produces the filament subunits that make up a flagellum and exports them into a growing helical filament. Builds the propeller; does not turn it."
+    "description": "Builds a flagellum on the cell."
   },
   {
     "id": "PILN",
     "name": "Pilin",
     "category": "Motility",
-    "description": "Builds protein filaments. Anchored in the membrane they stand as grippers that pull the cell along a substrate; secreted, they eject backwards and shove the cell by recoil."
+    "description": "Builds pili that grip a surface or shove the cell."
   },
   {
     "id": "CILN",
     "name": "Cilin",
     "category": "Motility",
-    "description": "Produces the filament subunits that make up each cilium and exports them into dense, bristling rows across the surface. Builds the oars; does not stroke them."
+    "description": "Builds rows of cilia on the cell."
   },
   {
     "id": "CILM",
     "name": "Ciliary Motor Protein",
     "category": "Motility",
-    "description": "The motor complex anchored beneath each row of cilia that flicks them in a coordinated beating stroke. Only cilia sharing its position tag beat, and a row of filaments with no matching motor only drifts."
+    "description": "Beats cilia to row the cell."
   },
   {
     "id": "TAXR",
@@ -478,18 +520,18 @@ export const GENES: GeneRecord[] = [
     "id": "OSMR",
     "name": "Osmolyn Receptor",
     "category": "Perception",
-    "description": "Reports the Osmolyn concentration in the water touching the cell. The receptor only works embedded in the membrane; copies left in the cytosol, secreted, or merely anchored give the cell no reading at all."
+    "description": "Reports how much osmolyn is in the water touching the cell."
   },
   {
     "id": "PCHR",
     "name": "Photochrome",
-    "category": "Perception",
+    "category": "Pigmentation",
     "description": "A pigment-bound light receptor. Reports how bright it is in one spectral band, and nothing about where the light comes from."
   },
   {
     "id": "PHVC",
     "name": "Photovector",
-    "category": "Perception",
+    "category": "Pigmentation",
     "description": "Focuses incoming light through the cell body so that intensity differs measurably across the envelope, letting the cell infer which direction light arrives from. Supplies a direction, not just a brightness."
   },
   {
@@ -515,6 +557,72 @@ export const GENES: GeneRecord[] = [
     "name": "Thermoreceptor",
     "category": "Perception",
     "description": "Reports local Temperature as a scalar regulatory input, by way of a protein whose folding state shifts with heat."
+  },
+  {
+    "id": "ATPR",
+    "name": "ATP Receptor",
+    "category": "Perception",
+    "description": "Reports the cell's ATP reserve as a scalar regulatory input."
+  },
+  {
+    "id": "BARR",
+    "name": "Baroreceptor",
+    "category": "Perception",
+    "description": "Reports the hydrostatic pressure around the cell as a scalar regulatory input."
+  },
+  {
+    "id": "CBXS",
+    "name": "Carbex Receptor",
+    "category": "Perception",
+    "description": "Reports the Carbex concentration in the water touching the cell."
+  },
+  {
+    "id": "FERS",
+    "name": "Ferron Receptor",
+    "category": "Perception",
+    "description": "Reports the Ferron concentration in the water touching the cell."
+  },
+  {
+    "id": "FLXR",
+    "name": "Fluxin Receptor",
+    "category": "Perception",
+    "description": "Reports the cell's Fluxin reserve as a scalar regulatory input."
+  },
+  {
+    "id": "LIPS",
+    "name": "Lipron Receptor",
+    "category": "Perception",
+    "description": "Reports the Lipron concentration in the water touching the cell."
+  },
+  {
+    "id": "NITS",
+    "name": "Nitrox Receptor",
+    "category": "Perception",
+    "description": "Reports the Nitrox concentration in the water touching the cell."
+  },
+  {
+    "id": "OXDS",
+    "name": "Oxidex Receptor",
+    "category": "Perception",
+    "description": "Reports the Oxidex concentration in the water touching the cell."
+  },
+  {
+    "id": "RFLR",
+    "name": "Refluxin Receptor",
+    "category": "Perception",
+    "description": "Reports Refluxin as a scalar regulatory input."
+  },
+  {
+    "id": "SLFS",
+    "name": "Sulfex Receptor",
+    "category": "Perception",
+    "description": "Reports the Sulfex concentration in the water touching the cell."
+  },
+  {
+    "id": "THGR",
+    "name": "Thigmoreceptor",
+    "category": "Perception",
+    "description": "Reports physical contact against the cell envelope as a scalar regulatory input."
   },
   {
     "id": "ACTX",
@@ -556,7 +664,7 @@ export const GENES: GeneRecord[] = [
     "id": "CYCL",
     "name": "Cyclin",
     "category": "Reproduction",
-    "description": "Pushes the cell to divide while it is expressed, but only once it has grown to division size 1.0 — the smallest size that leaves both daughters above the 0.5 minimum, since a dividing cell halves. The push lasts only as long as the gene is on."
+    "description": "Divides the cell once it has grown to division size."
   },
   {
     "id": "PLSM",

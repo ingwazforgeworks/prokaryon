@@ -1,5 +1,6 @@
 import { GENES } from "./genes";
 import { AMOUNTS, PROMOTERS, TAGS, amountRange, sanitizeCassette, tagRole, type Cassette } from "./genomeState";
+import { RECEPTORS, RESPONSES, SATURATION_MARKS, markIdForThreshold, receptorById } from "./receptorDrive";
 
 /**
  * The .pasta format: Prokaryon's FASTA. One entry per committed construct,
@@ -56,7 +57,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-type ElementKind = "gene" | "promoter" | "amount" | "route" | "site";
+type ElementKind = "gene" | "promoter" | "amount" | "route" | "site" | "receptor" | "response" | "threshold";
 
 type ElementEntry = {
   id: string;
@@ -69,6 +70,10 @@ function catalogElements(): { id: string; kind: ElementKind }[] {
   list.push(...PROMOTERS.map((promoter) => ({ id: promoter.id, kind: "promoter" as const })));
   list.push(...AMOUNTS.map((amount) => ({ id: amount.id, kind: "amount" as const })));
   list.push(...TAGS.map((tag) => ({ id: tag.id, kind: tagRole(tag.id) ?? "site" })));
+  // Appended after the original catalog so existing sequences keep their salts.
+  list.push(...RECEPTORS.map((receptor) => ({ id: receptor.elementId, kind: "receptor" as const })));
+  list.push(...RESPONSES.map((response) => ({ id: response.id, kind: "response" as const })));
+  list.push(...SATURATION_MARKS.map((mark) => ({ id: mark.id, kind: "threshold" as const })));
   return list;
 }
 
@@ -128,6 +133,13 @@ export function cassetteSequence(cassette: Cassette): string {
   parts.push(elementSequence(cassette.geneId));
   if (cassette.routeId) parts.push(elementSequence(cassette.routeId));
   if (cassette.siteId) parts.push(elementSequence(cassette.siteId));
+  if (cassette.promoterId === "COND") {
+    const receptor = receptorById(cassette.receptorId);
+    if (receptor) parts.push(elementSequence(receptor.elementId));
+    if (cassette.responseId) parts.push(elementSequence(cassette.responseId));
+    const mark = markIdForThreshold(cassette.threshold);
+    if (mark) parts.push(elementSequence(mark));
+  }
   return parts.join("");
 }
 
@@ -179,6 +191,26 @@ function parseEntry(header: string, sequence: string): { cassette: Cassette } | 
     siteId = site.id;
     position += site.sequence.length;
   }
+  let receptorId: string | null = null;
+  let responseId: string | null = null;
+  let threshold: number | null = null;
+  if (promoter.id === "COND") {
+    const receptor = matchAt(sequence, position, ["receptor"]);
+    if (receptor) {
+      receptorId = RECEPTORS.find((entry) => entry.elementId === receptor.id)?.id ?? null;
+      position += receptor.sequence.length;
+    }
+    const response = matchAt(sequence, position, ["response"]);
+    if (response) {
+      responseId = response.id;
+      position += response.sequence.length;
+    }
+    const mark = matchAt(sequence, position, ["threshold"]);
+    if (mark) {
+      threshold = SATURATION_MARKS.find((entry) => entry.id === mark.id)?.value ?? null;
+      position += mark.sequence.length;
+    }
+  }
   if (position !== sequence.length) return { error: `"${label}" carries bases the reader cannot attribute to any catalog part.` };
   const cassette = sanitizeCassette({
     name,
@@ -190,6 +222,9 @@ function parseEntry(header: string, sequence: string): { cassette: Cassette } | 
     geneId: coding.id,
     routeId,
     siteId,
+    receptorId,
+    responseId,
+    threshold,
   });
   if (!cassette) return { error: `"${label}" does not describe a construct the catalog recognizes.` };
   return { cassette };

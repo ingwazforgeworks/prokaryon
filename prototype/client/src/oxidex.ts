@@ -1,10 +1,9 @@
 import { TEXEL_COLUMNS, TEXEL_ROWS } from "./texels";
 
 /**
- * Dissolved oxidex. It is saturated at the lit surface and falls off
- * exponentially, so the middle of the column and the bottom are almost empty.
- * A sideways stir keeps neighboring cells from locking to one number.
- * The field advances twice a second.
+ * Smooth oxidex gradient: saturated at the lit surface, exponential falloff
+ * toward the bottom. The water no longer uses this. Oxidex in the column is
+ * the scattered clouds in oxidexClouds.ts.
  */
 const COUNT = TEXEL_COLUMNS * TEXEL_ROWS;
 const STEP = 0.5;

@@ -1,0 +1,10 @@
+{
+  "id": "osmolyn",
+  "title": "Osmolyn",
+  "category": "Resources",
+  "meta": "Resources  ·  dissolved brine",
+  "body": [
+    "Osmolyn leaks from halite. It is the brine of the water, and the cell does not import it as fuel. Water richer than the middle of a plume draws water out of the cell. Water poorer than that pushes water in.",
+    "The Osmolyn Receptor, set in the membrane, reports how much brine is touching the cell. A conditional promoter can read that report. Osmoprotectin, made in the cytosol, limits how far rich water can shrivel the body. Aquaporin, also in the membrane, is the water channel: see Osmotic stress."
+  ]
+}

@@ -1,9 +1,11 @@
 {
   "id": "light",
   "title": "Light",
-  "category": "Resources",
+  "category": "Environment",
+  "meta": "Environment  ·  day and depth",
   "body": [
-    "Placeholder. Light is an environmental field that weakens with depth and can be harvested or sensed.",
-    "The full entry will be drawn from the design wiki."
+    "A day is three stretches of about five minutes: afternoon, night, then morning. The bright peak at the start of the afternoon is noon. Night holds the column dark between sunset and sunrise.",
+    "Light enters at the surface and is absorbed on the way down. The floor of the column keeps about a hundredth of the surface brightness. Ultraviolet falls off much faster, so it is gone a short way below the surface. The environment probe reads both.",
+    "Sunlight is what warms the upper water. The brightness of the day is the brightness of that warming."
   ]
 }

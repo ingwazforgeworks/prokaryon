@@ -1,8 +1,8 @@
 import { geneExpressionLevel, type FlagellinConstruct } from "./flagellinDistribution";
 
 /**
- * Permease uptake — Ferron Permease (FERP) importing dissolved Ferron and
- * Sulfex Permease (SLFP) importing dissolved Sulfex — derived from genome
+ * Permease uptake — Ferron Permease (FERP), Sulfex Permease (SLFP), Nitrox
+ * Permease (NITP), and Oxidex Permease (OXDP) — derived from genome
  * constructs. Pure data logic with no imports on the renderer, resources, or
  * DOM so the uptake rules stay testable alone. Both transporters share one
  * rule: the import rate tracks the permease expression level, the local

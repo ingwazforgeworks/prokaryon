@@ -1,5 +1,5 @@
 import { pressureAt } from "./pressure";
-import { EXPRESSED_PROMOTERS, geneExpressionLevel, type FlagellinConstruct } from "./flagellinDistribution";
+import { constructPromoterRuns, geneExpressionLevel, type FlagellinConstruct } from "./flagellinDistribution";
 
 /** Fastest rise from buoyin, in world units per second. */
 export const MAX_RISE_SPEED = 6;
@@ -99,7 +99,7 @@ export function genomeCanDriveBuoyancy(constructs: readonly FlagellinConstruct[]
   return cytosolicCopies(constructs).some(
     (construct) =>
       (construct.geneId === "BUOY" || construct.geneId === "BALA") &&
-      EXPRESSED_PROMOTERS.has(construct.promoterId) &&
+      constructPromoterRuns(construct, true) &&
       construct.routeId !== null &&
       CYTOSOLIC_ROUTES.has(construct.routeId),
   );

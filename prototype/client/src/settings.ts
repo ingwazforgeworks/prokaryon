@@ -1,4 +1,5 @@
-const STORAGE_KEY = "prokaryon.settings";
+const STORAGE_KEY = "prokaryon:settings";
+const LEGACY_STORAGE_KEY = "prokaryon.settings";
 
 export const UI_SCALE_MIN = 0.75;
 export const UI_SCALE_MAX = 3;
@@ -99,16 +100,23 @@ export function refreshAutoScale(): void {
 
 function loadSettings(): GameSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const currentRaw = localStorage.getItem(STORAGE_KEY);
+    const legacyRaw = currentRaw === null ? localStorage.getItem(LEGACY_STORAGE_KEY) : null;
+    const raw = currentRaw ?? legacyRaw;
     if (!raw) return { ...DEFAULTS, scale: monitorUiScale() };
     const parsed = JSON.parse(raw) as Partial<GameSettings>;
     const autoScale = parsed.autoScale !== false;
-    return {
+    const next = {
       music: clampUnit(parsed.music, DEFAULTS.music),
       ui: clampUnit(parsed.ui, DEFAULTS.ui),
       scale: autoScale ? monitorUiScale() : clampScale(parsed.scale, DEFAULTS.scale),
       autoScale,
     };
+    if (legacyRaw !== null) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+    }
+    return next;
   } catch {
     return { ...DEFAULTS, scale: monitorUiScale() };
   }

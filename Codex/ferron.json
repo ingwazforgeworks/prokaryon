@@ -1,0 +1,10 @@
+{
+  "id": "ferron",
+  "title": "Ferron",
+  "category": "Resources",
+  "meta": "Resources  ·  dissolved fuel",
+  "body": [
+    "Ferron leaks from ferracite. Ferron Permease has to sit in the membrane to bring it inside. In the cytosol, Ferron Reductase burns the store and recharges Refluxin into Fluxin, one carrier for each unit of fuel. ATP synthase spends that Fluxin.",
+    "The burn is quick when the store is deep and slow when it is nearly empty, so a fresh permease fills a reserve before the reductase eats every arrival. The burn also stops when the carrier is already all Fluxin. Ferrosulfex Reductase spends Ferron and Sulfex together and recharges three carrier for each pair, which ATP synthase turns into more ATP than burning the two fuels apart."
+  ]
+}

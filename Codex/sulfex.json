@@ -1,0 +1,10 @@
+{
+  "id": "sulfex",
+  "title": "Sulfex",
+  "category": "Resources",
+  "meta": "Resources  ·  dissolved fuel",
+  "body": [
+    "Sulfex leaks from thionite. Sulfex Permease has to sit in the membrane to bring it inside. Sulfex Reductase, in the cytosol, burns the store and recharges Refluxin into Fluxin on the same terms as Ferron Reductase: a deep store burns fast, an empty store burns nothing, and a carrier that is already all Fluxin takes no more fuel.",
+    "Ferrosulfex Reductase is the paired enzyme. It spends one unit of Sulfex and one unit of Ferron and recharges three carrier. ATP synthase turns that charge into more ATP than the two single reductases would from the same meal."
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "buoyancy",
+  "title": "Buoyancy",
+  "category": "Concepts",
+  "meta": "Concepts  ·  rising and sinking",
+  "body": [
+    "Buoyin and Ballastin work in the cytosol. Each one is a vertical drift that reads pressure, which is depth. Buoyin rises once the cell is below the line its expression sets, and the strongest rise is a steady climb. Ballastin sinks while the cell is above its line, and a full sink is faster than a full rise.",
+    "The cell does not snap to that speed. The drift accelerates toward it, so an oscillatory promoter swings the rise and fall instead of teleporting the body. With both genes quiet, depth stays where swimming left it."
+  ]
+}

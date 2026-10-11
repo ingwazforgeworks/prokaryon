@@ -2,8 +2,9 @@
   "id": "temperature",
   "title": "Temperature",
   "category": "Environment",
+  "meta": "Environment  ·  heat",
   "body": [
-    "Placeholder. Temperature is an environmental field. Cells tolerate a band of it and suffer outside that band.",
-    "The full entry will be drawn from the design wiki."
+    "Open water rests near 4°C. While the sun is up, lit water is drawn toward 60°C, and it cools again after dark. A vent holds the water around it near 110°C, and that heat spreads into the neighboring water.",
+    "A cell starts to take damage above 62°C. In water at 100°C an unhurt cell dies in about twenty seconds. Cooler water stops the harm, and the cell mends if it gets there with any integrity left. The vitals line says the same thing: swim to cooler water."
   ]
 }

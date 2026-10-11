@@ -1,0 +1,10 @@
+{
+  "id": "membrane",
+  "title": "Membrane",
+  "category": "Cell Regions",
+  "meta": "Cell Regions  ·  the envelope",
+  "body": [
+    "The membrane is the envelope. Proteins that face the water or sit in it have to be sent there. A transmembrane tag embeds them: permeases, the flagellar motor, the ciliary motor, Aquaporin, and the Osmolyn Receptor. Without that tag they stay inside and do none of that work.",
+    "A secretory tag sends protein out of the cell. That is how Flagellin, Cilin, Lubricin, Crystallin, Isoprene Synthase, and secreted Pilin reach the outside. Lubricin slickens the wall so the cell keeps its slide along rock. Crystallin and Isoprene Synthase build the envelope's look, and stronger expression lays it on thicker."
+  ]
+}

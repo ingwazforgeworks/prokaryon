@@ -961,8 +961,8 @@ function unwrapNear(angle: number, target: number): number {
 }
 
 function categoryIcon(category: string): string | null {
-  const slug = category.toLowerCase();
-  if (!["metabolism", "homeostasis", "morphology", "motility", "perception", "regulation", "reproduction"].includes(slug)) return null;
+  const slug = category.toLowerCase().replace(/\s+/g, "");
+  if (!["metabolism", "homeostasis", "cellshape", "pigmentation", "motility", "perception", "regulation", "reproduction"].includes(slug)) return null;
   return `/ui/genome_viewer/categories/${slug}_32x32.png`;
 }
 

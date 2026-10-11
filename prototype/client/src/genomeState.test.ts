@@ -39,7 +39,7 @@ import {
   type Cassette,
   type Draft,
 } from "./genomeState";
-import { resetUnlocks, unlockGene, unlockPart, unlockedGeneIds } from "./geneUnlocks";
+import { geneUnlockCost, resetUnlocks, unlockGene, unlockPart, unlockedGeneIds } from "./geneUnlocks";
 import { cellResources, mutationPointCount, setMutationPoints, STARTING_ATP, STARTING_MUTATION_POINTS } from "./resources";
 import { applyRequirementEdges, type TechEdge } from "./techTree";
 
@@ -52,7 +52,7 @@ function check(condition: boolean, message: string): void {
 }
 
 resetGenomeState();
-check(mutationPointCount() === STARTING_MUTATION_POINTS, "a new cell starts with 100 mutation points");
+check(mutationPointCount() === STARTING_MUTATION_POINTS, "a new cell starts with the viable mutation-point reserve");
 check(getGenome().length === 0, "genome starts with only genes made in the editor");
 setCatalogGenesPopulated(true);
 const full = getGenome().length;
@@ -101,9 +101,15 @@ check(!slotAccepts("amount-min", "CNST") && !slotAccepts("amount-max", "AZOH"), 
 // Ferron Permease restrictions: transmembrane destination only, no position tag.
 check(geneAcceptsRoute(null, "CYTO") && geneAcceptsRoute("FLGN", "SecretoryPeptide") && !geneAcceptsRoute("FLGN", "TransmembraneSignal"), "flagellin still only takes the secreted route");
 check(geneAcceptsRoute("SLFP", "TransmembraneSignal") && !geneAcceptsRoute("SLFP", "SecretoryPeptide"), "the sulfex permease only takes the transmembrane route");
+check(geneAcceptsRoute("NITP", "TransmembraneSignal") && !geneAcceptsRoute("NITP", "SecretoryPeptide") && !geneAcceptsRoute("NITP", "CYTO"), "the nitrox permease only takes the transmembrane route");
+check(geneAcceptsRoute("OXDP", "TransmembraneSignal") && !geneAcceptsRoute("OXDP", "SecretoryPeptide") && !geneAcceptsRoute("OXDP", "CYTO"), "the oxidex permease only takes the transmembrane route");
+check(!geneAcceptsSite("NITP") && !geneAcceptsSite("OXDP"), "nitrox and oxidex permeases refuse position tags");
 check(geneAcceptsRoute("FERR", "CYTO") && !geneAcceptsRoute("FERR", "TransmembraneSignal") && !geneAcceptsRoute("FERR", "SecretoryPeptide"), "the ferron reductase only takes the cytosol destination");
 check(geneAcceptsRoute("SLFR", "CYTO") && !geneAcceptsRoute("SLFR", "TransmembraneSignal") && !geneAcceptsRoute("SLFR", "SecretoryPeptide"), "the sulfex reductase only takes the cytosol destination");
 check(!geneAcceptsSite("FERR") && !geneAcceptsSite("SLFR"), "the reductases refuse position tags");
+check(geneAcceptsRoute("FSXR", "CYTO") && !geneAcceptsRoute("FSXR", "TransmembraneSignal"), "ferrosulfex reductase only takes the cytosol destination");
+check(geneAcceptsRoute("NXDR", "CYTO") && !geneAcceptsRoute("NXDR", "SecretoryPeptide"), "nitroxidex reductase only takes the cytosol destination");
+check(!geneAcceptsSite("FSXR") && !geneAcceptsSite("NXDR"), "the paired reductases refuse position tags");
 check(geneAcceptsSite(null) && geneAcceptsSite("FLGN") && !geneAcceptsSite("FERP") && !geneAcceptsSite("SLFP"), "only the permeases refuse position tags");
 // Anabolase and cyclin are soluble cytosolic modules with no position tag.
 check(geneAcceptsRoute("ANAB", "CYTO") && !geneAcceptsRoute("ANAB", "TransmembraneSignal") && !geneAcceptsRoute("ANAB", "SecretoryPeptide"), "anabolase only takes the cytosol destination");
@@ -346,7 +352,8 @@ applySnapshot({
   draft: { name: "Bench", code: "BEN1", promoterId: "CNST", amountId: null, amountMinId: null, amountMaxId: null, geneId: "AZOH", routeId: null, siteId: null },
   genome: [
     { uid: "edit-a", name: "Scavenger A", code: "SCA1", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "AZOH", routeId: null, siteId: null },
-    { uid: "edit-b", name: "Scavenger B", code: "SCB1", promoterId: "COND", amountId: "LOW", amountMinId: null, amountMaxId: null, geneId: "OXDR", routeId: null, siteId: null },
+    { uid: "edit-b", name: "Scavenger B", code: "SCB1", promoterId: "COND", amountId: "LOW", amountMinId: null, amountMaxId: null, geneId: "OXDR", routeId: null, siteId: null, receptorId: "OSMR", responseId: "ACTV", threshold: null },
+    { uid: "edit-osmr", name: "Osmolyn Receptor", code: "OSMR", promoterId: "CNST", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "OSMR", routeId: "TransmembraneSignal", siteId: null },
   ],
 });
 check(editingCassette() === null, "no construct is being edited before an edit begins");
@@ -360,7 +367,7 @@ const updated = updateEditedCassette();
 check(!("problems" in updated), "a changed edit replaces its construct");
 if (!("problems" in updated)) {
   check(updated.cassette.uid === "edit-b" && updated.cassette.name === "Scavenger B Prime" && updated.index === 1, "the replacement keeps the slot identity and position");
-  check(getGenome()[1]?.name === "Scavenger B Prime" && getGenome().length === 2, "the edited construct is replaced in place");
+  check(getGenome()[1]?.name === "Scavenger B Prime" && getGenome().length === 3, "the edited construct is replaced in place");
 }
 check(editingCassette() === null, "the edit session ends after a replacement");
 check(beginEditCassette("edit-a"), "a second edit loads the other construct");
@@ -368,22 +375,22 @@ clearDraft();
 check(editingCassette() === null, "clearing the bench ends the edit session");
 check(beginEditCassette("edit-a") && removeCassette("edit-a"), "the edited construct can still be deleted");
 check(editingCassette() === null, "deleting the edited construct ends the edit session");
-check(getGenome().length === 1 && getGenome()[0]?.uid === "edit-b", "removal only deletes the edited construct");
+check(getGenome().length === 2 && getGenome().some((cassette) => cassette.uid === "edit-b") && getGenome().some((cassette) => cassette.uid === "edit-osmr"), "removal only deletes the edited construct");
 check(beginEditCassette("edit-b"), "an edit resumes after a removal");
 applySnapshot(snapshot());
 check(editingCassette()?.uid === "edit-b" && draftMatchesEditing(), "an edit session survives a snapshot round-trip");
 check(!beginEditCassette("missing"), "an unknown construct cannot be edited");
 
 setMutationPoints(STARTING_MUTATION_POINTS);
-check(unlockGene("FLGN"), "a mutation point unlocks a gene");
-check(mutationPointCount() === STARTING_MUTATION_POINTS - 1, "unlocking spends a mutation point");
+check(unlockGene("FLGN"), "mutation points unlock a gene");
+check(mutationPointCount() === STARTING_MUTATION_POINTS - (geneUnlockCost("FLGN") ?? 0), "unlocking flagellin spends its mutation-point cost");
 resetUnlocks();
 check(unlockedGeneIds().length === 0, "a new cell starts with no purchased gene unlocks (defaults are not purchases)");
 resetGenomeState();
 check(getGenome().length === 0 && getDraft().geneId === null, "a new cell starts with an empty genome and draft");
 
 // Motility genes gate on flagellin being unlocked, never on it being in the genome.
-setMutationPoints(10);
+setMutationPoints(20);
 const motilityEdges: TechEdge[] = [
   { from: "FLGN", to: "CILN", kind: "required" },
   { from: "FLGN", to: "CILM", kind: "required" },
@@ -411,7 +418,7 @@ const hyperCassette: Cassette = {
   routeId: null,
   siteId: null,
 };
-check(cassetteAtpCost(hyperCassette) === 0.16, "hyperexpression upkeep is 0.16 ATP per second");
+check(cassetteAtpCost(hyperCassette) === 2.5, "hyperexpression of a hydrolase is 2.5 ATP per second");
 check(cassetteMutationCost(hyperCassette) === 9, "assembly cost adds promoter, amount, and coding parts");
 const rangedCassette: Cassette = {
   ...hyperCassette,
@@ -423,30 +430,23 @@ const rangedCassette: Cassette = {
   routeId: "SURF",
   siteId: "LATR",
 };
-check(cassetteAtpCost(rangedCassette) === 0.044, "ranged upkeep averages the two amount levels and charges the tags");
+check(cassetteAtpCost(rangedCassette) === 0.688, "ranged upkeep averages the two amount levels, charges the tags, and weighs the gene");
 check(cassetteMutationCost(rangedCassette) === 10, "ranged assembly cost includes both tags");
 const bareCassette: Cassette = {
   ...hyperCassette,
   uid: "cost-bare",
   amountId: null,
 };
-check(cassetteAtpCost(bareCassette) === 0.02 && cassetteMutationCost(bareCassette) === 6, "a cassette without an amount uses the medium baseline");
+check(cassetteAtpCost(bareCassette) === 0.313 && cassetteMutationCost(bareCassette) === 6, "a cassette without an amount uses the medium baseline");
 
 // Upkeep is charged at runtime, so the scale carries the new-cell economy.
 const offCassette: Cassette = { ...hyperCassette, uid: "cost-off", amountId: "OFF" };
 check(cassetteAtpCost(offCassette) === 0, "a silenced cassette spends nothing, as its tile promises");
 const microCassette: Cassette = { ...hyperCassette, uid: "cost-micro", amountId: "MICRO" };
-check(cassetteAtpCost(microCassette) === 0.004, "microexpression upkeep is 0.004 ATP per second");
+check(cassetteAtpCost(microCassette) === 0.063, "microexpression of a hydrolase is 0.063 ATP per second");
 check(genomeAtpUpkeep([]) === 0, "an empty genome has no upkeep");
-check(genomeAtpUpkeep([hyperCassette, hyperCassette]) === 0.32, "upkeep sums across constructs");
-// Calibration: the starter metabolizer - one transmembrane permease and one
-// cytosolic reductase at medium - runs a new cell's starting ATP dry in
-// about four and a half hours when nothing refills it.
-const starterPermease: Cassette = { ...hyperCassette, uid: "cal-permease", amountId: "MED", routeId: "TransmembraneSignal" };
-const starterReductase: Cassette = { ...hyperCassette, uid: "cal-reductase", amountId: "MED", routeId: "CYTO" };
-const dryHours = STARTING_ATP / genomeAtpUpkeep([starterPermease, starterReductase]) / 3600;
-check(dryHours > 4.4 && dryHours < 4.9, `the starter metabolizer runs dry in about four and a half hours (${dryHours.toFixed(1)})`);
-check(cellResources().find((resource) => resource.id === "atp")?.amount === STARTING_ATP, "a new cell starts with 1000 ATP");
+check(genomeAtpUpkeep([hyperCassette, hyperCassette]) === 5, "upkeep sums across constructs");
+check(cellResources().find((resource) => resource.id === "atp")?.amount === STARTING_ATP, "a new cell starts with the viable ATP reserve");
 
 if (failed > 0) {
   throw new Error(`${failed} genome editor checks failed`);

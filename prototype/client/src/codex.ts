@@ -29,6 +29,7 @@ function isEntry(value: unknown): value is CodexEntry {
 }
 
 function loadEntries(): CodexEntry[] {
+  // Codex/*.json holds the essays. Fluxin and refluxin are in that set. Each gene in the catalog is appended after them.
   const loaded = import.meta.glob("../../../Codex/*.json", { eager: true, import: "default" });
   const entries: CodexEntry[] = [];
   const seen = new Set<string>();

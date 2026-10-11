@@ -1,0 +1,10 @@
+{
+  "id": "mutation-points",
+  "title": "Mutation points",
+  "category": "Concepts",
+  "meta": "Concepts  ·  the species budget",
+  "body": [
+    "Mutation points belong to the species, not to one cell. A new line starts with a hundred of them. Spending them on the tech tree unlocks a gene or a regulatory part for every cell that shares the genome.",
+    "Each time any cell of the species finishes dividing, the species earns one more point. The points are not split with the stores. A daughter is born with her half of the ATP and none of a private research budget, because there is only one budget."
+  ]
+}

@@ -1,3 +1,4 @@
+import { readAuthoring, saveAuthoring } from "./authoringStore";
 import { mutationPointCount, setMutationPoints } from "./resources";
 import {
   REGULATORY_EDGES,
@@ -6,27 +7,71 @@ import {
   type RegulatoryPart,
 } from "./regulatoryParts";
 
-/** Mutation point cost to unlock each gene on the tech tree. Genes left out are not purchasable. */
+/**
+ * Mutation point cost to unlock each gene on the tech tree. Genes left out are
+ * not purchasable. Four prices: 2 for a color, a float, or the first shape
+ * gene; 3 for a receptor, a transporter, or a simple reductase; 5 for a motor
+ * or a paired reductase; 8 for phototrophy and the late receptors. A new cell's
+ * points buy one of the cheap steps, and a division pays one point back.
+ */
 export const GENE_MP_COSTS: Readonly<Record<string, number>> = {
-  FLGN: 1,
-  FLGM: 1,
-  CILN: 1,
-  CILM: 1,
-  PILN: 1,
-  LUBR: 1,
-  ADHN: 1,
-  COHS: 1,
-  BUOY: 1,
-  BALA: 1,
-  ELGN: 1,
-  CRST: 1,
-  CRYS: 1,
-  GRTN: 1,
-  TPRN: 1,
-  ISPR: 1,
-  OSMR: 1,
-  OSMP: 1,
-  AQUP: 1,
+  GFP: 2,
+  YFP: 2,
+  BFP: 2,
+  RFP: 2,
+  CRYP: 2,
+  RHDS: 2,
+  CRTS: 2,
+  SIDS: 2,
+  ELGN: 2,
+  GRTN: 2,
+  BUOY: 2,
+  BALA: 2,
+  LUBR: 2,
+  OSMR: 3,
+  FERS: 3,
+  SLFS: 3,
+  OSMP: 3,
+  AQUP: 3,
+  CSP: 3,
+  HSP: 3,
+  OXDP: 3,
+  NITP: 3,
+  LIPP: 3,
+  CBXP: 3,
+  OXDR: 3,
+  NITR: 3,
+  LIPR: 3,
+  CBXR: 3,
+  FLGN: 3,
+  CILN: 3,
+  PILN: 3,
+  CRST: 3,
+  TPRN: 3,
+  FLGM: 5,
+  CILM: 5,
+  FSXR: 5,
+  NXDR: 5,
+  ADHN: 5,
+  COHS: 5,
+  THMR: 5,
+  BARR: 5,
+  THGR: 5,
+  CRYS: 5,
+  ISPR: 5,
+  CHLS: 8,
+  PHYS: 8,
+  PHOR: 8,
+  RXNC: 8,
+  PCHR: 8,
+  PHVC: 8,
+  OXDS: 8,
+  NITS: 8,
+  CBXS: 8,
+  LIPS: 8,
+  FLXR: 8,
+  ATPR: 8,
+  RFLR: 8,
 };
 
 /** The top-level genes every cell carries from the start of its life. */
@@ -38,6 +83,13 @@ type Listener = () => void;
 
 const listeners = new Set<Listener>();
 let unlocked = new Set<string>();
+
+/**
+ * Unlock store for hosts that cannot run the save API. Same rule as the
+ * genome: a 204 means the checked-in JSON owns the save, and anything else
+ * keeps this key. A local copy outranks the static file on the next load.
+ */
+const STORAGE_KEY = "prokaryon:tech-unlocks";
 
 const partsById = new Map(REGULATORY_PARTS.map((part) => [part.id, part]));
 
@@ -140,7 +192,7 @@ export function unlockGene(geneId: string): boolean {
  * Debug grant: unlocks every purchasable tech-tree gene and every regulatory
  * part, without spending mutation points or walking the prerequisite chains.
  */
-export function unlockAllGenes(): void {
+export async function unlockAllGenes(): Promise<boolean> {
   let added = false;
   for (const geneId of Object.keys(GENE_MP_COSTS)) {
     if (unlocked.has(geneId)) continue;
@@ -152,9 +204,9 @@ export function unlockAllGenes(): void {
     unlocked.add(part.id);
     added = true;
   }
-  if (!added) return;
+  if (!added) return true;
   notify();
-  void persistUnlocks();
+  return persistUnlocks();
 }
 
 /**
@@ -179,13 +231,18 @@ function isKnownUnlockId(id: string): boolean {
 }
 
 export async function loadUnlocks(): Promise<void> {
+  const local = parseUnlocks(readAuthoring(STORAGE_KEY));
+  if (local) {
+    if (sameUnlocks(local)) return;
+    unlocked = local;
+    notify();
+    return;
+  }
   try {
     const response = await fetch("/tech-unlocks.json", { cache: "no-store" });
     if (!response.ok) return;
-    const body = (await response.json()) as { v?: unknown; unlocked?: unknown };
-    if (body.v !== 1 || !Array.isArray(body.unlocked)) return;
-    const next = new Set(body.unlocked.filter((id): id is string => typeof id === "string" && isKnownUnlockId(id)));
-    if (next.size === unlocked.size && [...next].every((id) => unlocked.has(id))) return;
+    const next = parseUnlocks(await response.json());
+    if (!next || sameUnlocks(next)) return;
     unlocked = next;
     notify();
   } catch {
@@ -194,11 +251,11 @@ export async function loadUnlocks(): Promise<void> {
 }
 
 /** Clears every unlock, so a new cell starts with an empty tech tree. */
-export function resetUnlocks(): void {
-  if (unlocked.size === 0) return;
+export function resetUnlocks(): Promise<boolean> {
+  if (unlocked.size === 0) return Promise.resolve(true);
   unlocked = new Set();
   notify();
-  void persistUnlocks();
+  return persistUnlocks();
 }
 
 /** Debug restore: replaces the unlocked set outright, filtering unknown ids. */
@@ -208,15 +265,17 @@ export function applyUnlockedIds(ids: readonly string[]): void {
   void persistUnlocks();
 }
 
+function sameUnlocks(next: Set<string>): boolean {
+  return next.size === unlocked.size && [...next].every((id) => unlocked.has(id));
+}
+
+function parseUnlocks(value: unknown): Set<string> | null {
+  if (!value || typeof value !== "object") return null;
+  const body = value as { v?: unknown; unlocked?: unknown };
+  if (body.v !== 1 || !Array.isArray(body.unlocked)) return null;
+  return new Set(body.unlocked.filter((id): id is string => typeof id === "string" && isKnownUnlockId(id)));
+}
+
 async function persistUnlocks(): Promise<boolean> {
-  try {
-    const response = await fetch("/api/tech-unlocks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ v: 1, unlocked: [...unlocked] }),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  return saveAuthoring("/api/tech-unlocks", STORAGE_KEY, { v: 1, unlocked: [...unlocked] });
 }

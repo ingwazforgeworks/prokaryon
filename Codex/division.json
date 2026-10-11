@@ -2,8 +2,9 @@
   "id": "division",
   "title": "Division",
   "category": "Concepts",
+  "meta": "Concepts  ·  growth and daughters",
   "body": [
-    "Placeholder. Division splits one cell into two once it has grown large enough to spare the material.",
-    "The full entry will be drawn from the design wiki."
+    "Anabolase, in the cytosol, grows the cell while it is expressed. A hyperexpressed copy doubles the cell in about three minutes. Medium expression takes about five, and a trace takes about fifteen. Growth stops at three times the size of a new cell.",
+    "Cyclin, also in the cytosol, divides a cell that has reached twice the smallest size. A new cell is already that large. Each daughter comes out half as big, with half of every store, and has to grow back before she can divide. Both daughters keep the same genome. Each finished division gives the species one mutation point."
   ]
 }

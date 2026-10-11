@@ -17,7 +17,7 @@ export type RegulatoryPart = {
   icon: string;
   /** Free from the start of a cell's life. */
   defaultUnlocked: boolean;
-  /** Layout slot inside the category box: generation column (down) and lane row (across). */
+  /** Layout slot inside the category box: generation column (down) and lane row (across). Fractional lanes center children on their parents. */
   col: number;
   row: number;
 };
@@ -39,7 +39,7 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     icon: `${REGULATORY_ICON_DIR}/constitutive_32x32.png`,
     defaultUnlocked: true,
     col: 0,
-    row: 0,
+    row: 1.25,
   },
   {
     id: "GRAD",
@@ -61,7 +61,7 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     icon: `${REGULATORY_ICON_DIR}/oscillatory_32x32.png`,
     defaultUnlocked: false,
     col: 1,
-    row: 1,
+    row: 2.5,
   },
   {
     id: "COSL",
@@ -72,7 +72,7 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     icon: `${REGULATORY_ICON_DIR}/oscillatory_32x32.png`,
     defaultUnlocked: false,
     col: 2,
-    row: 2,
+    row: 3,
   },
   {
     id: "THRS",
@@ -90,11 +90,11 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     code: "COND",
     category: "Promoter",
     name: "Conditional",
-    description: "Drives downstream genes when a condition on receptor inputs is met.",
+    description: "Drives downstream genes from a receptor the cell is expressing. Choose the receptor, then whether activity turns the gene on, scales it, scales it in reverse, gates it, or inhibits it.",
     icon: `${REGULATORY_ICON_DIR}/conditional_32x32.png`,
     defaultUnlocked: false,
     col: 2,
-    row: 1,
+    row: 2,
   },
   {
     id: "PERS",
@@ -105,7 +105,7 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     icon: `${REGULATORY_ICON_DIR}/persistence_gated_32x32.png`,
     defaultUnlocked: false,
     col: 3,
-    row: 0,
+    row: 1,
   },
   // Expression: a linear ladder from silence up to hyperexpression.
   {
@@ -240,7 +240,7 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     icon: `${TAG_ICON_DIR}/polar_32x32.png`,
     defaultUnlocked: false,
     col: 0,
-    row: 0,
+    row: 0.5,
   },
   {
     id: "AntiPolarLocalizationSignal",
@@ -251,7 +251,7 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     icon: `${TAG_ICON_DIR}/antipolar_32x32.png`,
     defaultUnlocked: false,
     col: 0,
-    row: 1,
+    row: 1.5,
   },
   {
     id: "BIPO",
@@ -295,7 +295,7 @@ export const REGULATORY_PARTS: readonly RegulatoryPart[] = [
     icon: `${TAG_ICON_DIR}/bilateral_32x32.png`,
     defaultUnlocked: false,
     col: 2,
-    row: 0,
+    row: 1.5,
   },
 ];
 

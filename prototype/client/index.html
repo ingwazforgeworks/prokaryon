@@ -255,6 +255,115 @@
       #env-probe .env-probe-row.is-empty .env-probe-value {
         color: #5c6e6d;
       }
+      #cell-vitals-stack {
+        position: fixed;
+        top: calc(var(--top-pane) + 16px);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 3;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        pointer-events: none;
+        font-family: "Departure Mono", ui-monospace, monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        -webkit-font-smoothing: none;
+      }
+      #cell-vitals {
+        --vitals-accent: #e0c56a;
+        width: 300px;
+        box-sizing: border-box;
+        padding: 7px 10px 8px;
+        background: rgba(8, 12, 14, 0.92);
+        border: 1px solid var(--vitals-accent);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+        color: #d7e4e4;
+      }
+      #cell-vitals[hidden] {
+        display: none;
+      }
+      #cell-vitals[data-cause="heat"] {
+        --vitals-accent: #f08a4a;
+      }
+      #cell-vitals[data-cause="osmotic"] {
+        --vitals-accent: #9ee6c7;
+      }
+      #cell-vitals[data-cause="starvation"] {
+        --vitals-accent: #e0c56a;
+      }
+      #cell-vitals[data-tone="mend"] {
+        --vitals-accent: #8fd18a;
+      }
+      #cell-vitals[data-tone="dead"] {
+        --vitals-accent: #e05a4f;
+      }
+      #cell-vitals[data-tone="caution"] {
+        border-style: dashed;
+      }
+      #cell-vitals[data-tone="danger"] {
+        animation: vitals-pulse 0.9s ease-in-out infinite alternate;
+      }
+      @keyframes vitals-pulse {
+        from {
+          box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28), 0 0 0 0 var(--vitals-accent);
+        }
+        to {
+          box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28), 0 0 10px 1px var(--vitals-accent);
+        }
+      }
+      #cell-vitals .vitals-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      #cell-vitals .vitals-title {
+        color: var(--vitals-accent);
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+      #cell-vitals .vitals-percent {
+        color: #f2eadc;
+        white-space: nowrap;
+      }
+      #cell-vitals .vitals-bar {
+        height: 5px;
+        margin: 5px 0 4px;
+        background: rgba(150, 196, 194, 0.18);
+        border: 1px solid rgba(150, 196, 194, 0.35);
+      }
+      #cell-vitals .vitals-bar[hidden],
+      #cell-vitals .vitals-hint[hidden] {
+        display: none;
+      }
+      #cell-vitals .vitals-fill {
+        height: 100%;
+        background: var(--vitals-accent);
+        transition: width 160ms linear;
+      }
+      #cell-vitals .vitals-detail {
+        color: #f2eadc;
+      }
+      #cell-vitals .vitals-hint {
+        color: #9aabaa;
+      }
+      #cell-vitals-stack .vitals-obituaries {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+      #cell-vitals-stack .vitals-obituary {
+        padding: 4px 10px;
+        background: rgba(8, 12, 14, 0.92);
+        border: 1px solid #e05a4f;
+        color: #f2eadc;
+        transition: opacity 600ms ease;
+      }
+      #cell-vitals-stack .vitals-obituary.is-leaving {
+        opacity: 0;
+      }
       #hud {
         position: fixed;
         top: calc(var(--top-pane) + 16px);
@@ -1430,6 +1539,7 @@
         grid-template-rows: auto;
         justify-content: center;
         align-items: center;
+        row-gap: 14px;
         flex: none;
       }
       .editor-amount-stack {
@@ -1473,6 +1583,9 @@
       .editor-coding { border-color: #6e8eb8; }
       .editor-route,
       .editor-site { border-color: rgba(180, 164, 120, 0.7); }
+      .editor-receptor,
+      .editor-response,
+      .editor-threshold { border-color: #7ec8a3; }
       .editor-slot.is-locked {
         opacity: 0.35;
         pointer-events: none;
@@ -1590,6 +1703,7 @@
         display: flex;
         gap: 4px;
         min-width: 0;
+        overflow-x: auto;
       }
       .editor-tab[aria-selected="true"] {
         border-color: #e2a04a;
@@ -1682,6 +1796,13 @@
       .editor-card.is-dimmed {
         opacity: 0.35;
         cursor: not-allowed;
+      }
+      .editor-card.is-pick {
+        cursor: pointer;
+      }
+      .editor-card.is-chosen {
+        border-color: #e2a04a;
+        background: linear-gradient(180deg, rgba(92, 64, 28, 0.95), rgba(36, 24, 10, 0.95));
       }
       .editor-cards-empty {
         grid-row: 1 / span 2;
@@ -2525,6 +2646,12 @@
         gap: 6px;
       }
       .tech-category-group[hidden] {
+        display: none;
+      }
+      .tech-subcategories {
+        padding: 3px 8px;
+      }
+      .tech-subcategories[hidden] {
         display: none;
       }
       .tech-node[hidden] {
@@ -3387,9 +3514,22 @@
         opacity: 1;
         transition: opacity 700ms ease;
       }
-      #menu-note .menu-title {
+      #menu-note .menu-title,
+      #menu-start .menu-title {
         font-size: 13px;
         letter-spacing: 2px;
+      }
+      #menu-start {
+        width: min(460px, calc(100vw / var(--ui-scale) - 48px));
+      }
+      .menu-start-copy {
+        margin: 0 0 8px;
+        text-align: center;
+        font-size: 12px;
+        line-height: 18px;
+        letter-spacing: 0.2px;
+        color: #d7e4e4;
+        text-shadow: 0 1px 2px #000;
       }
       #gene-maker {
         display: flex;
@@ -3860,13 +4000,26 @@
         <p id="boot-label">Loading</p>
       </div>
     </div>
-    <script>
+    <script type="module">
       (function () {
         if (document.documentElement.hasAttribute("data-phone")) return;
         var boot = document.getElementById("boot");
+        if (!boot) return;
+        // In dev the Vite server full-reloads the page on every file save, which
+        // would cycle the boot bar 0->100 on each reload. The bar only exists to
+        // cover slow terrain/shader build on a real first load, so skip it in
+        // dev. Keep window.__boot wired so bootFinish() can still mark the
+        // element done and remove it, which menu.ts observes to reveal splash.
+        if (import.meta.env.DEV) {
+          boot.remove();
+          window.__boot = function (fraction) {
+            if (fraction >= 1) boot.remove();
+          };
+          return;
+        }
         var fill = document.getElementById("boot-fill");
         var label = document.getElementById("boot-label");
-        if (!boot || !fill || !label) return;
+        if (!fill || !label) return;
         var shown = 0;
         var target = 0;
         var done = false;
@@ -3947,6 +4100,13 @@
           <h2 class="menu-title" id="menu-note-title"></h2>
           <p class="menu-note" id="menu-note-body"></p>
           <button type="button" class="menu-button" id="menu-back">Back</button>
+        </div>
+        <div class="menu-stack" id="menu-start" hidden>
+          <h2 class="menu-title">New Cell</h2>
+          <p class="menu-start-copy">A minimal genome already carries a working cell: ferron import, ferron burn, and ATP synthase, a small polar flagellum, anabolase, and cyclin, with ferron stored. Hard mode starts empty, with fewer mutation points and a shorter ATP reserve. Respiration and division are still unlocked. The flagellum is not.</p>
+          <button type="button" class="menu-button" id="menu-start-viable">Minimal genome</button>
+          <button type="button" class="menu-button" id="menu-start-hard">Hard mode</button>
+          <button type="button" class="menu-button" id="menu-start-back">Back</button>
         </div>
         <div id="gene-maker" hidden>
           <div class="genome-titlebar">
@@ -4091,7 +4251,7 @@
       <div id="debug-cell" hidden>
       <div class="debug-row">
         <button id="debug-tab-motility" class="debug-wide active" type="button" aria-pressed="true">Motility Tab</button>
-        <button id="debug-tab-morphology" class="debug-wide" type="button" aria-pressed="false">Morphology Tab</button>
+        <button id="debug-tab-morphology" class="debug-wide" type="button" aria-pressed="false">Cell Shape Tab</button>
         <button id="debug-tab-pigment" class="debug-wide" type="button" aria-pressed="false">Pigment Tab</button>
         <button id="debug-tab-homeostasis" class="debug-wide" type="button" aria-pressed="false">Homeostasis Tab</button>
       </div>
@@ -4457,7 +4617,8 @@
       <div class="tech-modes tech-categories" id="tech-categories" role="tablist" aria-label="Tech tree categories">
         <div class="tech-category-group" id="tech-categories-functional">
           <button type="button" class="tech-mode" data-category="Motility" role="tab" aria-selected="true">Motility</button>
-          <button type="button" class="tech-mode" data-category="Morphology" role="tab" aria-selected="false">Morphology</button>
+          <button type="button" class="tech-mode" data-category="Cell Shape" role="tab" aria-selected="false">Cell Shape</button>
+          <button type="button" class="tech-mode" data-category="Pigmentation" role="tab" aria-selected="false">Pigmentation</button>
           <button type="button" class="tech-mode" data-category="Perception" role="tab" aria-selected="false">Perception</button>
           <button type="button" class="tech-mode" data-category="Metabolism" role="tab" aria-selected="false">Metabolism</button>
           <button type="button" class="tech-mode" data-category="Homeostasis" role="tab" aria-selected="false">Homeostasis</button>
@@ -4470,6 +4631,7 @@
           <button type="button" class="tech-mode" data-category="Position" role="tab" aria-selected="false">Position</button>
         </div>
       </div>
+      <div class="tech-modes tech-subcategories" id="tech-subcategories-functional" role="tablist" aria-label="Tech tree subcategories" hidden></div>
       <div class="tech-body">
         <section class="tech-viewport" id="tech-viewport" aria-label="Gene unlock tree">
           <div class="tech-world" id="tech-world"></div>

@@ -1,14 +1,31 @@
+import { CARRIER_BASE } from "./atpSynthase";
+
 /** Per-pool storage limit until the simulation reports a real capacity. */
 export const STORAGE_CAPACITY = 1000;
 
 /**
- * ATP a new cell starts with. Genome upkeep drains it toward zero in about
- * four and a half hours for a starter metabolizer, unless the cell refills it.
+ * ATP a minimal genome starts with. That genome's upkeep empties it in about
+ * four minutes when nothing refills it. The ferron reserve and, after that,
+ * ferron in the water are what keep the pool from getting there.
  */
-export const STARTING_ATP = 1000;
+export const STARTING_ATP = 740;
 
-/** Mutation points the player starts with. They are shared by the species, not stored in a cell. */
-export const STARTING_MUTATION_POINTS = 100;
+/**
+ * ATP a hard-mode cell starts with. The genome is empty, so the pool does not
+ * drain until the player commits constructs. Once it does, the shorter reserve
+ * leaves less time to finish a working chain.
+ */
+export const HARD_STARTING_ATP = 90;
+
+/**
+ * Mutation points a minimal-genome start has. Shared by the species, not stored
+ * in a cell. Enough for one early purchase, such as flagellin plus its motor,
+ * and not enough to buy the tree.
+ */
+export const STARTING_MUTATION_POINTS = 12;
+
+/** Mutation points a hard-mode cell starts with. A flagellum's motor is out of reach until a division. */
+export const HARD_MUTATION_POINTS = 6;
 
 /** Mutation points earned when any cell of the player's species finishes dividing. */
 export const MUTATION_POINTS_PER_DIVISION = 1;
@@ -44,6 +61,7 @@ type CatalogEntry = {
 const CATALOG: readonly CatalogEntry[] = [
   { id: "atp", name: "ATP", group: "Energy", file: "ATP.png" },
   { id: "fluxin", name: "Fluxin", group: "Energy", file: "Fluxin.png" },
+  { id: "refluxin", name: "Refluxin", group: "Energy", file: "Refluxin.png" },
   { id: "reducin", name: "Reducin", group: "Energy", file: "Reducin.png" },
   { id: "biomass", name: "Biomass", group: "Cell", file: "Biomass.png" },
   { id: "osmolyn", name: "Osmolyn", group: "Cell", file: "Osmolyn.png" },
@@ -73,21 +91,25 @@ const CATALOG: readonly CatalogEntry[] = [
   { id: "phycin", name: "Phycin", group: "Pigments", file: "Phycin.png" },
 ];
 
-/** Ribbon slots after ATP, filled by the stores the cell holds the most of. */
+/** Ribbon slots after ATP, fluxin, and refluxin, filled by the stores the cell holds the most of. */
 export const QUICK_RESOURCE_FOLLOWERS = 3;
 
+/** The carrier sits beside ATP so a charged pool and a spent pool stay on screen. */
+const RIBBON_PINNED = ["atp", "fluxin", "refluxin"] as const;
+
 /**
- * Ribbon order for one cell: ATP, then the fullest other stores.
+ * Ribbon order for one cell: ATP, fluxin, refluxin, then the fullest other stores.
  * Equal amounts keep catalog order, so a tie does not shuffle the strip.
  */
 export function quickResourceIds(
   resources: readonly { id: string; amount: number }[],
   followers = QUICK_RESOURCE_FOLLOWERS,
 ): string[] {
-  const ranked = resources.filter((resource) => resource.id !== "atp").slice().sort((a, b) => b.amount - a.amount);
-  const ids = ["atp"];
+  const pinned = new Set<string>(RIBBON_PINNED);
+  const ranked = resources.filter((resource) => !pinned.has(resource.id)).slice().sort((a, b) => b.amount - a.amount);
+  const ids: string[] = [...RIBBON_PINNED];
   for (const resource of ranked) {
-    if (ids.length >= 1 + followers) break;
+    if (ids.length >= RIBBON_PINNED.length + followers) break;
     ids.push(resource.id);
   }
   return ids;
@@ -116,7 +138,7 @@ function buildStore(atp: number): CellStore {
     name: entry.name,
     group: entry.group,
     sprite: `/resources/${entry.file}`,
-    amount: entry.id === "atp" ? atp : 0,
+    amount: entry.id === "atp" ? atp : entry.id === "refluxin" ? CARRIER_BASE : 0,
     capacity: STORAGE_CAPACITY,
     rate: 0,
   }));

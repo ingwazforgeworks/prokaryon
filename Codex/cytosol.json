@@ -2,8 +2,9 @@
   "id": "cytosol",
   "title": "Cytosol",
   "category": "Cell Regions",
+  "meta": "Cell Regions  ·  the interior",
   "body": [
-    "Placeholder. The cytosol is the watery interior where dissolved resources meet the cell's enzymes.",
-    "The full entry will be drawn from the design wiki."
+    "The cytosol is the watery interior. A construct with no destination tag leaves its protein here. Soluble enzymes work in this water and nowhere else: the reductases, Anabolase, Cyclin, Elongin, Girthin, Crescentin, Taperin, Buoyin, Ballastin, and Osmoprotectin.",
+    "A tag that sends those proteins into the membrane, or out of the cell, means they never fold into the working enzyme. The cytosol tag says the same thing as leaving the destination empty."
   ]
 }

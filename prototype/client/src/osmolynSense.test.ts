@@ -1,5 +1,13 @@
 import type { FlagellinConstruct } from "./flagellinDistribution";
-import { genomeCanSenseOsmolyn, osmolynReceptorExpressionLevel, sensedOsmolyn } from "./osmolynSense";
+import {
+  genomeCanSenseOsmolyn,
+  genomeExpressesOsmolynReceptor,
+  osmolynDetectionLimit,
+  osmolynReceptorExpressionLevel,
+  osmolynReceptorSensitivity,
+  osmolynSaturation,
+  sensedOsmolyn,
+} from "./osmolynSense";
 
 let failed = 0;
 
@@ -32,12 +40,26 @@ check(osmolynReceptorExpressionLevel([construct({ amountId: "MICRO" })]) === 0.1
 check(osmolynReceptorExpressionLevel([construct({ siteId: "PolarLocalizationSignal" })]) === 1, "a position tag does not stop a transmembrane receptor");
 check(genomeCanSenseOsmolyn([construct()]) && !genomeCanSenseOsmolyn([construct({ routeId: "CYTO" })]), "only a transmembrane receptor can sense");
 
+check(osmolynDetectionLimit(0) === Number.POSITIVE_INFINITY, "no expression has no detection limit");
+check(Math.abs(osmolynDetectionLimit(1) - 0.04) < 1e-9, "full expression detects down to 0.04 of the field");
+check(Math.abs(osmolynDetectionLimit(0.1) - 0.4) < 1e-9, "microexpression only detects rich water");
+check(osmolynDetectionLimit(1) < osmolynDetectionLimit(0.1), "higher expression detects a smaller concentration");
+check(osmolynReceptorSensitivity([construct(), construct()]) === 2, "a second receptor construct adds to the sensitivity");
+check(osmolynDetectionLimit(osmolynReceptorSensitivity([construct(), construct()])) < osmolynDetectionLimit(1), "two full receptors detect a smaller concentration than one");
+check(genomeExpressesOsmolynReceptor([construct()]) && !genomeExpressesOsmolynReceptor([construct({ amountId: "OFF" })]), "only a receptor that actually makes protein counts as expressed");
+
 check(sensedOsmolyn(0, 0.4) === null, "an idle receptor leaves the concentration unknown");
 check(sensedOsmolyn(1, 0.4) === 0.4, "a working receptor reports the water it is sitting in");
-check(sensedOsmolyn(0.1, 0.4) === 0.4, "a weak receptor still reports the concentration");
+check(sensedOsmolyn(0.1, 0.4) === 0.4, "microexpression just reaches a 0.4 field");
+check(sensedOsmolyn(0.1, 0.2) === 0, "microexpression misses dilute osmolyn");
+check(sensedOsmolyn(1, 0.2) === 0.2, "full expression still reads that dilute water");
 check(sensedOsmolyn(1, 0) === 0, "a working receptor can report water that holds no osmolyn");
 check(sensedOsmolyn(1, -1) === 0 && sensedOsmolyn(1, 2) === 1, "the reading stays inside the field range");
 check(sensedOsmolyn(1, Number.NaN) === null, "a broken sample is not a reading");
+check(osmolynSaturation(0, 0.5) === 0, "a missing receptor is not saturated");
+check(osmolynSaturation(0.1, 0.2) === 0, "undetected water does not saturate a weak receptor");
+check(osmolynSaturation(1, 0.2) > 0, "the same water saturates a full receptor");
+check(osmolynSaturation(1, 1) > osmolynSaturation(1, 0.2), "richer water saturates the receptor further");
 
 if (failed > 0) throw new Error(`${failed} osmolyn receptor checks failed`);
 console.log("osmolyn receptor checks passed");

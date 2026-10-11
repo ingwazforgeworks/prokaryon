@@ -1,0 +1,10 @@
+{
+  "id": "pressure",
+  "title": "Pressure",
+  "category": "Environment",
+  "meta": "Environment  ·  depth",
+  "body": [
+    "Pressure is a straight line from none at the surface to about 1,380 atmospheres at the floor. It does not change with the time of day.",
+    "Buoyin and Ballastin read this line. Buoyin lifts the cell once it is deep enough for the amount being expressed. Ballastin sinks the cell while it is still above the depth that amount names. The environment probe reports the same reading in atmospheres."
+  ]
+}

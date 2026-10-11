@@ -28,6 +28,7 @@ const GLYPH_BOX: Record<string, readonly [number, number, number, number]> = {
   ferracite: [-40.6, -33.1, 181.2, 161.2],
   ferron: [-46.8, -43.5, 193.5, 172.2],
   fluxin: [-47.4, -39.3, 190.3, 169.3],
+  refluxin: [-47.4, -39.3, 190.3, 169.3],
   glycon: [-63.4, -48.1, 213.9, 190.2],
   granulin: [-43.1, -28.1, 181.2, 161.2],
   lipron: [-22, -24.8, 146.2, 146.2],

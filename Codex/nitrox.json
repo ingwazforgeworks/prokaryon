@@ -1,0 +1,10 @@
+{
+  "id": "nitrox",
+  "title": "Nitrox",
+  "category": "Resources",
+  "meta": "Resources  ·  dissolved fuel",
+  "body": [
+    "Nitrox leaks from azoite. Nitrox Permease, in the membrane, fills an intracellular pool when the plume is above a faint trace. The pool sits on the resource bar like the other fuels.",
+    "Nitroxidex Reductase is what spends it. The enzyme needs Nitrox and Oxidex together, in the cytosol, and recharges three Refluxin into Fluxin for each pair. ATP synthase spends that Fluxin. A cell can import Nitrox and still gain nothing from it until that reductase and ATP synthase are both expressed."
+  ]
+}

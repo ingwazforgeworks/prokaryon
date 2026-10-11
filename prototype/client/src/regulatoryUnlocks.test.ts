@@ -119,5 +119,43 @@ check(REGULATORY_PARTS.every((part) => isPartUnlocked(part.id)), "no regulatory 
 resetUnlocks();
 check(!isGeneUnlocked("FLGN") && !isPartUnlocked("GRAD"), "a reset clears the debug grants");
 
+// Layout centering: every sibling group that shares one parent set centers on
+// that parent set's midpoint, so children sit under their parents instead of
+// drifting right. Single children sit directly beneath their parent.
+{
+  const rowOf = new Map(REGULATORY_PARTS.map((part) => [part.id, part.row]));
+  const parentsOfPart = new Map<string, string[]>();
+  for (const edge of REGULATORY_EDGES) {
+    const list = parentsOfPart.get(edge.to) ?? [];
+    list.push(edge.from);
+    parentsOfPart.set(edge.to, list);
+  }
+  const siblingGroups = new Map<string, { parents: string[]; children: string[] }>();
+  for (const part of REGULATORY_PARTS) {
+    const parents = (parentsOfPart.get(part.id) ?? []).sort();
+    if (parents.length === 0) continue;
+    const key = parents.join("|");
+    const group = siblingGroups.get(key) ?? { parents, children: [] };
+    group.children.push(part.id);
+    siblingGroups.set(key, group);
+  }
+  const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-9;
+  for (const { parents, children } of siblingGroups.values()) {
+    const parentMean = parents.reduce((sum, id) => sum + rowOf.get(id)!, 0) / parents.length;
+    const childMean = children.reduce((sum, id) => sum + rowOf.get(id)!, 0) / children.length;
+    check(near(parentMean, childMean), `${children.join(", ")} center on ${parents.join(" + ")}`);
+  }
+  // Parts sharing a generation row keep at least one lane of clearance.
+  for (const category of REGULATORY_CATEGORY_ORDER) {
+    const lanesByCol = new Map<number, number[]>();
+    for (const part of REGULATORY_PARTS.filter((entry) => entry.category === category)) {
+      const lanes = lanesByCol.get(part.col) ?? [];
+      for (const lane of lanes) check(Math.abs(lane - part.row) >= 1, `${part.id} keeps a lane of clearance in ${category}`);
+      lanes.push(part.row);
+      lanesByCol.set(part.col, lanes);
+    }
+  }
+}
+
 if (failed > 0) throw new Error(`${failed} regulatory unlock checks failed`);
 console.log("regulatory unlock checks passed");

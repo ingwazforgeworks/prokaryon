@@ -14,6 +14,7 @@ import {
   updateCellResource,
   updateResource,
 } from "./resources";
+import { CARRIER_BASE } from "./atpSynthase";
 
 let failed = 0;
 
@@ -27,6 +28,12 @@ const amount = (id: string): number => cellResources().find((resource) => resour
 
 check(amount("atp") === STARTING_ATP, "the focused cell starts with a full ATP store");
 check(amount("sulfex") === 0, "the focused cell starts with no sulfex");
+check(amount("refluxin") === CARRIER_BASE, "the focused cell starts with a spent carrier pool");
+check(amount("fluxin") === 0, "the focused cell starts with no charged carrier");
+check(
+  quickResourceIds(cellResources()).join() === "atp,fluxin,refluxin,reducin,biomass,osmolyn",
+  "a new cell shows its carrier beside ATP",
+);
 
 const parent = createCellStore(STARTING_ATP);
 updateCellResource(parent, "sulfex", { amount: 40, rate: 2, capacity: 80 });
@@ -62,8 +69,9 @@ check(mutationPointCount() === wallet + 1, "a zero grant adds nothing");
 setMutationPoints(wallet);
 
 const ribbon = createCellStore(0);
+updateCellResource(ribbon, "refluxin", { amount: 0 });
 check(
-  quickResourceIds(ribbon.resources).join() === "atp,fluxin,reducin,biomass",
+  quickResourceIds(ribbon.resources).join() === "atp,fluxin,refluxin,reducin,biomass,osmolyn",
   "an empty cell shows ATP and the first three stores",
 );
 updateCellResource(ribbon, "oxidex", { amount: 12 });
@@ -71,13 +79,13 @@ updateCellResource(ribbon, "sulfex", { amount: 9 });
 updateCellResource(ribbon, "ferron", { amount: 4 });
 updateCellResource(ribbon, "fluxin", { amount: 1 });
 check(
-  quickResourceIds(ribbon.resources).join() === "atp,oxidex,sulfex,ferron",
+  quickResourceIds(ribbon.resources).join() === "atp,fluxin,refluxin,oxidex,sulfex,ferron",
   "the ribbon follows the three fullest stores after ATP",
 );
 updateCellResource(ribbon, "biomass", { amount: 20 });
 updateCellResource(ribbon, "sulfex", { amount: 12 });
 check(
-  quickResourceIds(ribbon.resources).join() === "atp,biomass,sulfex,oxidex",
+  quickResourceIds(ribbon.resources).join() === "atp,fluxin,refluxin,biomass,sulfex,oxidex",
   "a fuller store moves beside ATP, and a tie keeps catalog order",
 );
 

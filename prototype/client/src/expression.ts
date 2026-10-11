@@ -17,6 +17,8 @@ import { playCue } from "./uiSound";
 import type { CellSnapshot } from "./types";
 
 const METER_SCALE = 32;
+/** Live expression is a 0–1 degree. The glow curve was tuned for preview counts near 100. */
+const LIVE_GLOW_SCALE = 180;
 const compartments = new Map<string, Compartment>();
 
 type GeneRow = {
@@ -142,11 +144,18 @@ export function initExpression(): void {
       const pressed = entry.entryId === snapshot.selected?.entryId ? "true" : "false";
       if (row.button.getAttribute("aria-pressed") !== pressed) row.button.setAttribute("aria-pressed", pressed);
       const meter = snapshot.cell ? entryMeter(mode, snapshot.cell.id, entry.entryId, time) : null;
-      const width = meter === null ? "0%" : `${Math.min(100, (meter / METER_SCALE) * 100)}%`;
+      const meterScale = mode === "live" ? 1 : METER_SCALE;
+      const width = meter === null ? "0%" : `${Math.min(100, (meter / meterScale) * 100)}%`;
       if (row.meter.style.width !== width) row.meter.style.width = width;
-      const meterLabel = meter === null ? "Expression rate not connected" : `Expression rate ${formatNumber(meter, 1)} proteins / s`;
+      const meterLabel = meter === null
+        ? "Expression not connected"
+        : mode === "live"
+          ? `Expression ${formatNumber(meter * 100, 0)}%`
+          : `Expression rate ${formatNumber(meter, 1)} proteins / s`;
       if (row.meter.title !== meterLabel) row.meter.title = meterLabel;
     }
+    setCaption(rateCanvas, mode === "live" ? "Expression" : "Expression rate (proteins / s)");
+    setCaption(abundanceCanvas, mode === "live" ? "Expression level" : "Protein abundance (count)");
 
     renderInspector(snapshot.selected, snapshot.reading, mode);
     renderStatus(snapshot.cell?.label ?? null, snapshot.liveTelemetry);
@@ -237,12 +246,27 @@ export function initExpression(): void {
         inspector.replaceChildren(message);
       } else {
         inspector.classList.remove("is-empty");
-        inspector.replaceChildren(inspectorView(entry, reading));
+        inspector.replaceChildren(inspectorView(entry, reading, shownMode));
       }
     }
     if (!entry || !reading) return;
-    setText("expression-rate-value", reading.ratePerSecond.availability === "available" ? `${formatNumber(reading.ratePerSecond.value, 1)} / s` : "—");
-    setText("expression-count-value", reading.abundance.availability === "available" ? formatNumber(reading.abundance.value, 0) : "—");
+    const live = shownMode === "live";
+    setText(
+      "expression-rate-value",
+      reading.ratePerSecond.availability === "available"
+        ? live
+          ? `${formatNumber(reading.ratePerSecond.value * 100, 0)}%`
+          : `${formatNumber(reading.ratePerSecond.value, 1)} / s`
+        : "—",
+    );
+    setText(
+      "expression-count-value",
+      reading.abundance.availability === "available"
+        ? live
+          ? `${formatNumber(reading.abundance.value * 100, 0)}%`
+          : formatNumber(reading.abundance.value, 0)
+        : "—",
+    );
   };
 
   const renderViewer = (entries: GenomeEntryView[], selectedId: string | null, cellId: number | null, time: number): void => {
@@ -272,7 +296,7 @@ export function initExpression(): void {
       entryId: entry.entryId,
       routeId: entry.tagId,
       siteId: entry.siteId,
-      abundance: cellId === null ? null : entryAbundance(mode, cellId, entry.entryId, time),
+      abundance: glowAbundance(mode, cellId === null ? null : entryAbundance(mode, cellId, entry.entryId, time)),
       rate: cellId === null ? null : entryMeter(mode, cellId, entry.entryId, time),
       selected: entry.entryId === selectedId,
     }));
@@ -350,7 +374,7 @@ export function initExpression(): void {
   kick();
 }
 
-function inspectorView(entry: GenomeEntryView, reading: ExpressionReading | null): DocumentFragment {
+function inspectorView(entry: GenomeEntryView, reading: ExpressionReading | null, shownMode: ExpressionMode): DocumentFragment {
   const fragment = document.createDocumentFragment();
   const figure = document.createElement("figure");
   figure.className = "expression-portrait";
@@ -378,7 +402,10 @@ function inspectorView(entry: GenomeEntryView, reading: ExpressionReading | null
     detail.textContent = entry.promoter.detail;
     fragment.append(detail);
   }
-  fragment.append(metric("Expression rate (proteins / s)", "—", "expression-rate-value"), metric("Protein count", "—", "expression-count-value"));
+  fragment.append(
+    metric(shownMode === "live" ? "Expression" : "Expression rate (proteins / s)", "—", "expression-rate-value"),
+    metric(shownMode === "live" ? "Expression level" : "Protein count", "—", "expression-count-value"),
+  );
   const distribution = document.createElement("div");
   distribution.className = "expression-distribution";
   const heading = document.createElement("p");
@@ -443,6 +470,17 @@ function inspectorSignature(entry: GenomeEntryView | null, reading: ExpressionRe
     ? `${reading.distribution.value.membrane.toFixed(3)}:${reading.distribution.value.cytosol.toFixed(3)}:${reading.distribution.value.secreted.toFixed(3)}`
     : "unavailable";
   return `${entry.entryId}|${mode}|${entry.tagId ?? "-"}|${entry.siteId ?? "-"}|${entry.promoter?.name ?? "-"}|${rate}|${abundance}|${distribution}|${entry.description.length}`;
+}
+
+function setCaption(canvas: HTMLCanvasElement, text: string): void {
+  const caption = canvas.parentElement?.parentElement?.querySelector(".expression-chart-title");
+  if (caption && caption.textContent !== text) caption.textContent = text;
+}
+
+function glowAbundance(mode: ExpressionMode, abundance: number | null): number | null {
+  if (abundance === null) return null;
+  if (mode === "preview") return abundance;
+  return abundance * LIVE_GLOW_SCALE;
 }
 
 function setText(id: string, value: string): void {

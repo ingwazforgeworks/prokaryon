@@ -7,7 +7,7 @@ const NUTRIENT_COLORS: Record<string, string> = {
   Ferron: "#f08a4a",
   Nitrox: "#7ec0e8",
   Osmolyn: "#9ee6c7",
-  Oxidex: "#d5dde2",
+  Oxidex: "#e7a8a2",
 };
 
 /** Below this, the nutrient is treated as absent and the row is dimmed. */

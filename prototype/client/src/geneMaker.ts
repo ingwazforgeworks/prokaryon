@@ -9,7 +9,8 @@ const STATUSES = ["Proposed", "Confirmed"] as const;
 const CATEGORIES = [
   "Metabolism",
   "Homeostasis",
-  "Morphology",
+  "Cell Shape",
+  "Pigmentation",
   "Motility",
   "Perception",
   "Regulation",

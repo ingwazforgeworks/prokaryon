@@ -1,5 +1,6 @@
 import { GENES } from "./genes";
 import { AMOUNTS, PROMOTERS, TAGS, type Cassette } from "./genomeState";
+import { RECEPTORS, RESPONSES, SATURATION_MARKS } from "./receptorDrive";
 import { cassetteSequence, elementSequence, genomeToPasta, parsePasta } from "./pasta";
 import { ownedSpecies, speciesFileStem } from "./species";
 
@@ -13,7 +14,15 @@ function check(condition: boolean, message: string): void {
 
 // --- Sequence assignment -----------------------------------------------------
 
-const allIds = [...GENES.map((gene) => gene.id), ...PROMOTERS.map((promoter) => promoter.id), ...AMOUNTS.map((amount) => amount.id), ...TAGS.map((tag) => tag.id)];
+const allIds = [
+  ...GENES.map((gene) => gene.id),
+  ...PROMOTERS.map((promoter) => promoter.id),
+  ...AMOUNTS.map((amount) => amount.id),
+  ...TAGS.map((tag) => tag.id),
+  ...RECEPTORS.map((receptor) => receptor.elementId),
+  ...RESPONSES.map((response) => response.id),
+  ...SATURATION_MARKS.map((mark) => mark.id),
+];
 for (const id of allIds) {
   check(elementSequence(id).length > 0, `${id} has no sequence`);
 }
@@ -39,7 +48,7 @@ for (const gene of GENES) {
   }
 }
 
-for (const id of [...PROMOTERS.map((promoter) => promoter.id), ...AMOUNTS.map((amount) => amount.id), ...TAGS.map((tag) => tag.id)]) {
+for (const id of [...PROMOTERS.map((promoter) => promoter.id), ...AMOUNTS.map((amount) => amount.id), ...TAGS.map((tag) => tag.id), ...RECEPTORS.map((receptor) => receptor.elementId), ...RESPONSES.map((response) => response.id), ...SATURATION_MARKS.map((mark) => mark.id)]) {
   const sequence = elementSequence(id);
   check(sequence.length % 3 === 0 && sequence.length >= 9 && sequence.length <= 30, `${id} is a short regulatory region of 3 to 10 codons`);
 }
@@ -54,6 +63,7 @@ const samples: Cassette[] = [
   { uid: "a5", name: "Untagged Fluorescence", code: "GLOW", promoterId: "GRAD", amountId: null, amountMinId: "LOW", amountMaxId: "HYPER", geneId: "GFP", routeId: "CYTO", siteId: null },
   { uid: "a6", name: "Polar Chemoreceptor", code: "CHMR", promoterId: "THRS", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "CHMR", routeId: null, siteId: "BIPO" },
   { uid: "a7", name: "Default Amount Construct", code: "DFLT", promoterId: "CNST", amountId: null, amountMinId: null, amountMaxId: null, geneId: "ATPS", routeId: "TransmembraneSignal", siteId: null },
+  { uid: "a8", name: "Guarded Flagellin", code: "GFLG", promoterId: "COND", amountId: "MED", amountMinId: null, amountMaxId: null, geneId: "FLGN", routeId: "SecretoryPeptide", siteId: null, receptorId: "OSMR", responseId: "GATE", threshold: 0.5 },
 ];
 
 const text = genomeToPasta(samples);
@@ -63,7 +73,7 @@ check(roundTripped.cassettes.length === samples.length, `round-trip keeps every 
 for (let index = 0; index < samples.length; index += 1) {
   const before = samples[index];
   const after = roundTripped.cassettes[index];
-  const same = after !== undefined && before.name === after.name && before.code === after.code && before.promoterId === after.promoterId && before.amountId === after.amountId && before.amountMinId === after.amountMinId && before.amountMaxId === after.amountMaxId && before.geneId === after.geneId && before.routeId === after.routeId && before.siteId === after.siteId;
+  const same = after !== undefined && before.name === after.name && before.code === after.code && before.promoterId === after.promoterId && before.amountId === after.amountId && before.amountMinId === after.amountMinId && before.amountMaxId === after.amountMaxId && before.geneId === after.geneId && before.routeId === after.routeId && before.siteId === after.siteId && (before.receptorId ?? null) === (after.receptorId ?? null) && (before.responseId ?? null) === (after.responseId ?? null) && (before.threshold ?? null) === (after.threshold ?? null);
   check(same, `round-trip preserves ${before.name} (uid is expected to change)`);
   if (after !== undefined) check(after.uid !== before.uid, `round-trip issues a fresh uid for ${before.name}`);
 }

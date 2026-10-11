@@ -1,0 +1,10 @@
+{
+  "id": "localization",
+  "title": "Localization",
+  "category": "Concepts",
+  "meta": "Concepts  ·  where a protein sits",
+  "body": [
+    "A construct can name a destination and a position. The enzymes that change the cell use Cytosolic, Secreted, or Transmembrane. The position is a place on the body: one pole, the other pole, one side, the other side, both poles, or both sides. Many genes refuse a destination they cannot use, and some refuse a position tag entirely.",
+    "Position is what aims a motor, a flagellum, a pilus, or Taperin. Taperin stays in the cytosol and still takes a position: it pinches the end where it gathers. Flagellin builds filaments at the site it was sent to. A motor protein spins whatever shares that site."
+  ]
+}

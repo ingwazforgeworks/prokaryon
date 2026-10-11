@@ -1,5 +1,23 @@
+import { readAuthoring, saveAuthoring } from "./authoringStore";
 import { GENES, type GeneRecord } from "./genes";
+import {
+  catalogPlacement,
+  geneAcceptsCytosolicSite,
+  geneAcceptsRoute,
+  geneAcceptsSite,
+  routeIdsFor,
+} from "./geneLocalization";
 import { isGeneUnlocked, isPartUnlocked } from "./geneUnlocks";
+
+export { geneAcceptsCytosolicSite, geneAcceptsRoute, geneAcceptsSite };
+import { genomeExpressesOsmolynReceptor } from "./osmolynSense";
+import {
+  markById,
+  markIdForThreshold,
+  receptorById,
+  responseById,
+  responseNeedsThreshold,
+} from "./receptorDrive";
 import { missingGeneRequirements } from "./techTree";
 
 const REGULATORY_ICON_DIR = "/ui/genome_viewer/regulatory_icons";
@@ -41,9 +59,10 @@ export function regulatoryIcon(id: string | null): string | null {
   return REGULATORY_ICONS[id] ?? null;
 }
 
-export type PartKind = "promoter" | "amount" | "gene" | "tag";
+export type PartKind = "promoter" | "amount" | "gene" | "tag" | "receptor" | "response" | "threshold";
 export type TagRole = "route" | "site";
-export type Slot = "promoter" | "amount" | "amount-min" | "amount-max" | "coding" | "route" | "site";
+export type Slot = "promoter" | "amount" | "amount-min" | "amount-max" | "coding" | "route" | "site" | "receptor" | "response" | "threshold";
+export type BindingSlot = "receptor" | "response" | "threshold";
 
 export type PromoterRecord = {
   id: string;
@@ -96,6 +115,12 @@ export type Draft = {
   geneId: string | null;
   routeId: string | null;
   siteId: string | null;
+  /** Receptor a conditional promoter reads. Unused on every other promoter. */
+  receptorId?: string | null;
+  /** How that receptor drives the gene. */
+  responseId?: string | null;
+  /** Saturation mark for threshold and below-level responses, from 0 to 1. */
+  threshold?: number | null;
 };
 
 export type Cassette = {
@@ -109,6 +134,9 @@ export type Cassette = {
   geneId: string;
   routeId: string | null;
   siteId: string | null;
+  receptorId?: string | null;
+  responseId?: string | null;
+  threshold?: number | null;
 };
 
 export type GenomeSnapshot = {
@@ -133,8 +161,8 @@ export const PROMOTERS: PromoterRecord[] = [
     id: "COND",
     name: "Conditional",
     summary: "Receptor condition",
-    description: "Drives downstream genes when a condition on receptor inputs is met. A condition can only read a quantity some receptor in the genome actually measures.",
-    activation: "When a receptor condition is met",
+    description: "Drives downstream genes from a receptor the cell is expressing. Choose which receptor, then how the gene answers it: any activity, in proportion to saturation, in inverse proportion, past a threshold, or by inhibition.",
+    activation: "When its receptor responds",
   },
   {
     id: "GRAD",
@@ -299,47 +327,6 @@ const promotersById = new Map(PROMOTERS.map((promoter) => [promoter.id, promoter
 const amountsById = new Map(AMOUNTS.map((amount) => [amount.id, amount]));
 const tagsById = new Map(TAGS.map((tag) => [tag.id, tag]));
 
-const CATALOG_PLACEMENTS: Record<string, { routeId: string | null; siteId: string | null }> = {
-  GFP: { routeId: "CYTO", siteId: null },
-  ANAB: { routeId: "CYTO", siteId: null },
-  CYCL: { routeId: "CYTO", siteId: null },
-  GLYP: { routeId: "SecretoryPeptide", siteId: "PolarLocalizationSignal" },
-  NITP: { routeId: "SecretoryPeptide", siteId: "AntiPolarLocalizationSignal" },
-  OXDP: { routeId: "SecretoryPeptide", siteId: "BIPO" },
-  LIPP: { routeId: "SecretoryPeptide", siteId: "LATR" },
-  SLFP: { routeId: "TransmembraneSignal", siteId: null },
-  CBXP: { routeId: "SecretoryPeptide", siteId: "BILT" },
-  ATPS: { routeId: "TransmembraneSignal", siteId: null },
-  ADHN: { routeId: "TransmembraneSignal", siteId: null },
-  AQUP: { routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" },
-  PPMP: { routeId: "SURF", siteId: "AntiPolarLocalizationSignal" },
-  PHOR: { routeId: "SURF", siteId: "BIPO" },
-  SIDP: { routeId: "SURF", siteId: "LATR" },
-  CRTS: { routeId: "SURF", siteId: "ANTL" },
-  BFP: { routeId: "SURF", siteId: "BILT" },
-  FLGN: { routeId: null, siteId: "PolarLocalizationSignal" },
-  FLGM: { routeId: "TransmembraneSignal", siteId: null },
-  PILN: { routeId: "TransmembraneSignal", siteId: "AntiPolarLocalizationSignal" },
-  CHMR: { routeId: null, siteId: "BIPO" },
-  OSMR: { routeId: "TransmembraneSignal", siteId: null },
-  CHLS: { routeId: null, siteId: "LATR" },
-  FERP: { routeId: "TransmembraneSignal", siteId: null },
-  FERR: { routeId: "CYTO", siteId: null },
-  SLFR: { routeId: "CYTO", siteId: null },
-  BUOY: { routeId: "CYTO", siteId: null },
-  BALA: { routeId: "CYTO", siteId: null },
-  LUBR: { routeId: "SecretoryPeptide", siteId: null },
-  CILN: { routeId: "SecretoryPeptide", siteId: null },
-  ELGN: { routeId: "CYTO", siteId: null },
-  GRTN: { routeId: "CYTO", siteId: null },
-  CRST: { routeId: "CYTO", siteId: null },
-  CRYS: { routeId: "SecretoryPeptide", siteId: null },
-  ISPR: { routeId: "SecretoryPeptide", siteId: null },
-  TPRN: { routeId: "CYTO", siteId: "PolarLocalizationSignal" },
-  CILM: { routeId: "TransmembraneSignal", siteId: "PolarLocalizationSignal" },
-  FRMP: { routeId: null, siteId: "BILT" },
-};
-
 let draft: Draft = emptyDraft();
 let genome: Cassette[] = [];
 let insertion = 0;
@@ -398,90 +385,6 @@ export function tagRole(id: string): TagRole | null {
   if (id === "CYTO" || id === "SecretoryPeptide" || id === "TransmembraneSignal" || id === "SURF") return "route";
   if (id === "PolarLocalizationSignal" || id === "AntiPolarLocalizationSignal" || id === "BIPO" || id === "LATR" || id === "ANTL" || id === "BILT") return "site";
   return null;
-}
-
-/** Genes whose protein only works through one specific destination route. */
-const GENE_ROUTES: Record<string, string[]> = {
-  ANAB: ["CYTO"],
-  CYCL: ["CYTO"],
-  ATPS: ["TransmembraneSignal"],
-  ADHN: ["TransmembraneSignal"],
-  COHS: ["SecretoryPeptide", "SURF"],
-  FLGN: ["SecretoryPeptide"],
-  FLGM: ["TransmembraneSignal"],
-  FERP: ["TransmembraneSignal"],
-  SLFP: ["TransmembraneSignal"],
-  FERR: ["CYTO"],
-  SLFR: ["CYTO"],
-  BUOY: ["CYTO"],
-  BALA: ["CYTO"],
-  ELGN: ["CYTO"],
-  GRTN: ["CYTO"],
-  CRST: ["CYTO"],
-  TPRN: ["CYTO"],
-  CILN: ["SecretoryPeptide"],
-  LUBR: ["SecretoryPeptide"],
-  CRYS: ["SecretoryPeptide"],
-  ISPR: ["SecretoryPeptide"],
-  CILM: ["TransmembraneSignal"],
-  PILN: ["TransmembraneSignal", "SecretoryPeptide"],
-  OSMR: ["TransmembraneSignal"],
-  AQUP: ["TransmembraneSignal"],
-};
-
-/** Genes that cannot carry a position tag. Genes left out take any position. */
-const GENE_SITES: Record<string, string[]> = {
-  ANAB: [],
-  CYCL: [],
-  ATPS: [],
-  ADHN: [],
-  COHS: [],
-  FERP: [],
-  SLFP: [],
-  FERR: [],
-  SLFR: [],
-  BUOY: [],
-  BALA: [],
-  CILN: [],
-  LUBR: [],
-  ELGN: [],
-  GRTN: [],
-  CRST: [],
-  CRYS: [],
-  ISPR: [],
-};
-
-/**
- * Genes whose cytosolic copies may still carry a position tag. Taperin shapes
- * the cell where it gathers, so its mandatory cytosolic route is the one route
- * allowed to pair with a position tag; for every other gene the cytosol tag
- * still means "nowhere in particular".
- */
-const CYTOSOLIC_SITE_GENES: ReadonlySet<string> = new Set(["TPRN"]);
-
-/** Whether a gene's cytosolic copies accept a position tag. */
-export function geneAcceptsCytosolicSite(geneId: string | null): boolean {
-  return geneId !== null && CYTOSOLIC_SITE_GENES.has(geneId);
-}
-
-/**
- * Whether a gene accepts a destination route. Genes without a restriction take
- * any route; the restriction only binds once the coding region is placed.
- */
-export function geneAcceptsRoute(geneId: string | null, routeId: string): boolean {
-  if (geneId === null) return true;
-  const allowed = GENE_ROUTES[geneId];
-  return allowed === undefined || allowed.includes(routeId);
-}
-
-/**
- * Whether a gene accepts a position tag at all. Genes without a restriction
- * take any position; the restriction only binds once the coding region is placed.
- */
-export function geneAcceptsSite(geneId: string | null): boolean {
-  if (geneId === null) return true;
-  const allowed = GENE_SITES[geneId];
-  return allowed === undefined || allowed.length > 0;
 }
 
 /** True when the promoter varies between a minimum and a maximum amount. */
@@ -564,24 +467,97 @@ export function behaviorLine(value: Draft = draft): string {
   if (!promoter) return "Add a promoter.";
   if (!gene) return "Add a coding region.";
   const where = tags.length > 0 ? ` · ${tags.join(" · ")}` : "";
+  if (value.promoterId === "COND") {
+    const receptor = receptorById(value.receptorId);
+    const response = responseById(value.responseId);
+    const mark = responseNeedsThreshold(value.responseId) ? markById(markIdForThreshold(value.threshold)) : undefined;
+    const how = receptor && response
+      ? `${response.name}${mark ? ` at ${mark.name.toLowerCase()}` : ""} via ${receptor.name}`
+      : receptor
+        ? `reading ${receptor.name}`
+        : "waiting on a receptor";
+    return `${how} → ${gene.name} production${where}`;
+  }
   return `${promoter.activation} → ${gene.name} production${where}`;
 }
 
-// Upkeep in tenths of the original ATP-per-second scale, one slot per amount
-// level 0-6 (OFF through HYPER). Expression ATP is one fiftieth of that scale.
-// The upkeep step charges exactly this per cassette, so the genome viewer's
-// "ATP upkeep" line is the live drain. A starter metabolizer - one permease and
-// one reductase at medium with a position tag each - draws 0.06 ATP/s, so the
-// 1000 ATP a new cell starts with lasts about four and a half hours unless
-// metabolism refills it. OFF is free: the tile's own text promises the gene
-// spends nothing while it is off.
+// Upkeep in tenths of an ATP-per-second scale, one slot per amount level 0-6
+// (OFF through HYPER). The scale is one quarter, then a per-gene weight.
+// A pigment is cheap to wear. A motor and a phototrophy complex are not.
+// The minimal genome draws about 3.06 ATP/s, so the 740 ATP it starts with
+// lasts about four minutes unless metabolism refills it. Its medium ferron
+// chain, burning the stored reserve, makes more ATP than this drain. OFF is free:
+// the tile's own text promises the gene spends nothing while it is off.
 const AMOUNT_ATP_TENTHS: readonly number[] = [0, 2, 5, 10, 20, 40, 80];
 const PROMOTER_ATP_TENTHS: Record<string, number> = { CNST: 0, COND: 1, COSL: 1, GRAD: 2, OSCL: 1, THRS: 2 };
 const PROMOTER_MP: Record<string, number> = { CNST: 1, COND: 2, COSL: 3, GRAD: 3, OSCL: 3, THRS: 2 };
 const TAG_ATP_TENTHS = 5;
 const CODING_MP = 2;
 const DEFAULT_AMOUNT_LEVEL = 3;
-const EXPRESSION_ATP_SCALE = 1 / 50;
+const EXPRESSION_ATP_SCALE = 1 / 4;
+
+/**
+ * How hard a gene is to keep expressed, relative to a plain enzyme.
+ * Unlisted genes, including the ferron chain, weigh 1.
+ */
+const GENE_ATP_WEIGHT: Readonly<Record<string, number>> = {
+  GFP: 0.5,
+  YFP: 0.5,
+  BFP: 0.5,
+  RFP: 0.5,
+  CRYP: 0.5,
+  RHDS: 0.5,
+  CRTS: 0.5,
+  SIDS: 0.5,
+  ELGN: 0.75,
+  GRTN: 0.75,
+  CRST: 0.75,
+  TPRN: 0.75,
+  CRYS: 0.75,
+  ISPR: 0.75,
+  BUOY: 0.75,
+  BALA: 0.75,
+  LUBR: 0.75,
+  AQUP: 1.25,
+  OSMP: 1.25,
+  CSP: 1.25,
+  HSP: 1.25,
+  OXDP: 1.25,
+  NITP: 1.25,
+  LIPP: 1.25,
+  CBXP: 1.25,
+  OXDR: 1.25,
+  NITR: 1.25,
+  LIPR: 1.25,
+  CBXR: 1.25,
+  ANAB: 1.25,
+  CYCL: 1.25,
+  AZOH: 1.25,
+  GLYH: 1.25,
+  LIPH: 1.25,
+  FLGN: 1.5,
+  CILN: 1.5,
+  PILN: 1.5,
+  ADHN: 1.5,
+  COHS: 1.5,
+  FLGM: 2,
+  CILM: 2,
+  FSXR: 2,
+  NXDR: 2,
+  FCTR: 2,
+  CHLS: 2.5,
+  PHYS: 2.5,
+  PHOR: 2.5,
+  RXNC: 2.5,
+  PCHR: 2.5,
+  PHVC: 2.5,
+};
+
+/** Relative expression upkeep of one gene. Unlisted genes weigh 1. */
+export function geneAtpWeight(geneId: string): number {
+  const weight = GENE_ATP_WEIGHT[geneId];
+  return typeof weight === "number" && weight > 0 ? weight : 1;
+}
 
 function atpFromTenths(tenths: number): number {
   return Math.round((tenths / 10) * EXPRESSION_ATP_SCALE * 1000) / 1000;
@@ -590,10 +566,11 @@ function atpFromTenths(tenths: number): number {
 /** ATP upkeep per second for one cassette, charged every frame by the upkeep step. */
 export function cassetteAtpCost(cassette: Cassette): number {
   const level = Math.round(cassetteAmountLevel(cassette));
+  if (level <= 0) return 0;
   const amount = AMOUNT_ATP_TENTHS[Math.min(AMOUNT_ATP_TENTHS.length - 1, Math.max(0, level))] ?? 10;
   const promoter = PROMOTER_ATP_TENTHS[cassette.promoterId] ?? 2;
   const tags = (cassette.routeId === null ? 0 : 1) + (cassette.siteId === null ? 0 : 1);
-  return atpFromTenths(amount + promoter + tags * TAG_ATP_TENTHS);
+  return atpFromTenths((amount + promoter + tags * TAG_ATP_TENTHS) * geneAtpWeight(cassette.geneId));
 }
 
 /** Total ATP upkeep per second across a whole genome, in thousandths to keep the sum clean. */
@@ -654,7 +631,7 @@ export function draftProblems(value: Draft = draft): string[] {
   if (value.routeId && tagRole(value.routeId) !== "route") problems.push("Destination tag is not in the catalog.");
   if (value.routeId && !geneAcceptsRoute(value.geneId, value.routeId)) {
     const gene = value.geneId ? genesById.get(value.geneId) : undefined;
-    const accepted = (GENE_ROUTES[value.geneId ?? ""] ?? [])
+    const accepted = routeIdsFor(value.geneId ?? "")
       .map((id) => tagsById.get(id)?.name ?? id)
       .join(" or ");
     problems.push(`${gene?.name ?? "This gene"} only takes the ${accepted || "matching"} destination tag.`);
@@ -663,6 +640,23 @@ export function draftProblems(value: Draft = draft): string[] {
   if (value.siteId && !geneAcceptsSite(value.geneId)) {
     const gene = value.geneId ? genesById.get(value.geneId) : undefined;
     problems.push(`${gene?.name ?? "This gene"} cannot take a position tag.`);
+  }
+  if (value.promoterId === "COND") {
+    const expressed = genomeExpressesOsmolynReceptor(genome);
+    if (!value.receptorId) {
+      problems.push(expressed
+        ? "Choose which receptor this promoter reads."
+        : "Express a receptor before a conditional promoter can read one.");
+    } else if (!receptorById(value.receptorId)) {
+      problems.push("That receptor is not in the catalog.");
+    } else if (value.receptorId === "OSMR" && !expressed) {
+      problems.push("The Osmolyn Receptor is not expressed, so this promoter has no input.");
+    }
+    if (value.receptorId && !value.responseId) problems.push("Choose how this promoter responds to the receptor.");
+    else if (value.responseId && !responseById(value.responseId)) problems.push("That response is not in the catalog.");
+    else if (responseNeedsThreshold(value.responseId) && markIdForThreshold(value.threshold) === null) {
+      problems.push("Set the saturation level for this response.");
+    }
   }
   return problems;
 }
@@ -715,6 +709,7 @@ export function setInsertionIndex(index: number): void {
 }
 
 export function placePart(slot: Slot, id: string): boolean {
+  if (slot === "receptor" || slot === "response" || slot === "threshold") return setDraftBinding(slot, id);
   if (!slotAccepts(slot, id)) return false;
   if (slot === "promoter" && draft.promoterId === id) return true;
   if (slot === "amount" && draft.amountId === id) return true;
@@ -723,21 +718,81 @@ export function placePart(slot: Slot, id: string): boolean {
   if (slot === "coding" && draft.geneId === id) return true;
   if (slot === "route" && draft.routeId === id) return true;
   if (slot === "site" && draft.siteId === id) return true;
+  const promoterId = slot === "promoter" ? id : draft.promoterId;
   draft = {
     ...draft,
-    promoterId: slot === "promoter" ? id : draft.promoterId,
+    promoterId,
     amountId: slot === "amount" ? id : draft.amountId,
     amountMinId: slot === "amount-min" ? id : draft.amountMinId,
     amountMaxId: slot === "amount-max" ? id : draft.amountMaxId,
     geneId: slot === "coding" ? id : draft.geneId,
     routeId: slot === "route" ? id : draft.routeId,
     siteId: slot === "route" && id === "CYTO" && !geneAcceptsCytosolicSite(draft.geneId) ? null : slot === "site" ? id : draft.siteId,
+    ...bindingFor(promoterId, draft),
   };
   notifyDraft();
   return true;
 }
 
+/** Chooses the receptor, response, or saturation mark on a conditional draft. */
+export function setDraftBinding(slot: BindingSlot, id: string): boolean {
+  if (draft.promoterId !== "COND") return false;
+  if (slot === "receptor") {
+    if (!receptorById(id)) return false;
+    if (draft.receptorId === id) return true;
+    draft = { ...draft, receptorId: id };
+    notifyDraft();
+    return true;
+  }
+  if (slot === "response") {
+    const response = responseById(id);
+    if (!response) return false;
+    const threshold = response.needsThreshold ? (markIdForThreshold(draft.threshold) ? draft.threshold ?? null : 0.5) : null;
+    if (draft.responseId === id && (draft.threshold ?? null) === threshold) return true;
+    draft = { ...draft, responseId: id, threshold };
+    notifyDraft();
+    return true;
+  }
+  const mark = markById(id);
+  if (!mark || !responseNeedsThreshold(draft.responseId)) return false;
+  if (draft.threshold === mark.value) return true;
+  draft = { ...draft, threshold: mark.value };
+  notifyDraft();
+  return true;
+}
+
+/** Binding fields kept only while the promoter is conditional. */
+function bindingFor(
+  promoterId: string | null,
+  source: { receptorId?: string | null; responseId?: string | null; threshold?: number | null },
+): { receptorId: string | null; responseId: string | null; threshold: number | null } {
+  if (promoterId !== "COND") return { receptorId: null, responseId: null, threshold: null };
+  return {
+    receptorId: source.receptorId ?? null,
+    responseId: source.responseId ?? null,
+    threshold: source.threshold ?? null,
+  };
+}
+
 export function clearPart(slot: Slot): void {
+  if (slot === "receptor") {
+    if ((draft.receptorId ?? null) === null && (draft.responseId ?? null) === null && (draft.threshold ?? null) === null) return;
+    draft = { ...draft, receptorId: null, responseId: null, threshold: null };
+    notifyDraft();
+    return;
+  }
+  if (slot === "response") {
+    if ((draft.responseId ?? null) === null && (draft.threshold ?? null) === null) return;
+    draft = { ...draft, responseId: null, threshold: null };
+    notifyDraft();
+    return;
+  }
+  if (slot === "threshold") {
+    if ((draft.threshold ?? null) === null) return;
+    draft = { ...draft, threshold: null };
+    notifyDraft();
+    return;
+  }
   if (slot === "promoter" && draft.promoterId === null) return;
   if (slot === "amount" && draft.amountId === null) return;
   if (slot === "amount-min" && draft.amountMinId === null) return;
@@ -745,15 +800,17 @@ export function clearPart(slot: Slot): void {
   if (slot === "coding" && draft.geneId === null) return;
   if (slot === "route" && draft.routeId === null) return;
   if (slot === "site" && draft.siteId === null) return;
+  const promoterId = slot === "promoter" ? null : draft.promoterId;
   draft = {
     ...draft,
-    promoterId: slot === "promoter" ? null : draft.promoterId,
+    promoterId,
     amountId: slot === "amount" ? null : draft.amountId,
     amountMinId: slot === "amount-min" ? null : draft.amountMinId,
     amountMaxId: slot === "amount-max" ? null : draft.amountMaxId,
     geneId: slot === "coding" ? null : draft.geneId,
     routeId: slot === "route" ? null : draft.routeId,
     siteId: slot === "site" ? null : draft.siteId,
+    ...bindingFor(promoterId, draft),
   };
   notifyDraft();
 }
@@ -777,6 +834,7 @@ function draftCassetteFields(): Omit<Cassette, "uid"> | null {
     geneId: draft.geneId,
     routeId: draft.routeId,
     siteId: draft.siteId,
+    ...bindingFor(draft.promoterId, draft),
   };
 }
 
@@ -807,6 +865,9 @@ export function beginEditCassette(uid: string): boolean {
     geneId: cassette.geneId,
     routeId: cassette.routeId,
     siteId: cassette.siteId,
+    receptorId: cassette.receptorId ?? null,
+    responseId: cassette.responseId ?? null,
+    threshold: cassette.threshold ?? null,
   };
   editingUid = uid;
   notifyDraft();
@@ -833,7 +894,10 @@ export function draftMatchesEditing(): boolean {
     fields.amountMaxId === cassette.amountMaxId &&
     fields.geneId === cassette.geneId &&
     fields.routeId === cassette.routeId &&
-    fields.siteId === cassette.siteId
+    fields.siteId === cassette.siteId &&
+    (fields.receptorId ?? null) === (cassette.receptorId ?? null) &&
+    (fields.responseId ?? null) === (cassette.responseId ?? null) &&
+    (fields.threshold ?? null) === (cassette.threshold ?? null)
   );
 }
 
@@ -897,28 +961,10 @@ export function applySnapshot(value: GenomeSnapshot): void {
  */
 const STORAGE_KEY = "prokaryon:genome-state";
 
-function persistGenomeLocal(): boolean {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot()));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function readGenomeLocal(): GenomeSnapshot | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? parseSnapshot(JSON.parse(raw)) : null;
-  } catch {
-    return null;
-  }
-}
-
 export async function loadGenomeState(): Promise<void> {
   // A saved local snapshot belongs to an origin without the save API, and it
   // is newer than anything the static JSON can hold, so it wins.
-  const local = readGenomeLocal();
+  const local = parseSnapshot(readAuthoring(STORAGE_KEY));
   if (local) {
     applySnapshot(local);
     return;
@@ -935,20 +981,7 @@ export async function loadGenomeState(): Promise<void> {
 }
 
 export async function persistGenome(): Promise<boolean> {
-  try {
-    const response = await fetch("/api/genome-state", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(snapshot()),
-    });
-    // The save API answers 204 with no body. Any other answer — a static
-    // host's 404, or its SPA rewrite returning the page as a 200 — saved
-    // nothing, so the genome falls back to localStorage.
-    if (response.status === 204) return true;
-  } catch {
-    // No reachable API at all: same fallback.
-  }
-  return persistGenomeLocal();
+  return saveAuthoring("/api/genome-state", STORAGE_KEY, snapshot());
 }
 
 export function parseSnapshot(value: unknown): GenomeSnapshot | null {
@@ -971,7 +1004,7 @@ export function resetGenomeState(): void {
 }
 
 function emptyDraft(): Draft {
-  return { name: "Untitled construct", code: "", promoterId: null, amountId: null, amountMinId: null, amountMaxId: null, geneId: null, routeId: null, siteId: null };
+  return { name: "Untitled construct", code: "", promoterId: null, amountId: null, amountMinId: null, amountMaxId: null, geneId: null, routeId: null, siteId: null, receptorId: null, responseId: null, threshold: null };
 }
 
 function isCatalogCassette(uid: string): boolean {
@@ -993,7 +1026,7 @@ function catalogGenome(): Cassette[] {
 }
 
 function catalogTagFields(geneId: string): { routeId: string | null; siteId: string | null } {
-  return CATALOG_PLACEMENTS[geneId] ?? { routeId: null, siteId: null };
+  return catalogPlacement(geneId);
 }
 
 function readAmountFields(
@@ -1072,17 +1105,17 @@ function firstSentence(text: string): string {
 function sanitizeDraft(value: unknown): Draft {
   const blank = emptyDraft();
   if (!value || typeof value !== "object") return blank;
-  const body = value as { name?: unknown; code?: unknown; promoterId?: unknown; amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown };
+  const body = value as { name?: unknown; code?: unknown; promoterId?: unknown; amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown; receptorId?: unknown; responseId?: unknown; threshold?: unknown };
   const name = typeof body.name === "string" && body.name.trim().length > 0 ? body.name.slice(0, NAME_LIMIT) : blank.name;
   const code = typeof body.code === "string" ? normalizeCode(body.code) : "";
   const promoterId = typeof body.promoterId === "string" && promotersById.has(body.promoterId) ? body.promoterId : null;
   const geneId = typeof body.geneId === "string" && genesById.has(body.geneId) ? body.geneId : null;
-  return { name, code, promoterId, geneId, ...readAmountFields(body, promoterId), ...readTagFields(body, geneId) };
+  return { name, code, promoterId, geneId, ...readAmountFields(body, promoterId), ...readTagFields(body, geneId), ...readBindingFields(body, promoterId) };
 }
 
 export function sanitizeCassette(value: unknown): Cassette | null {
   if (!value || typeof value !== "object") return null;
-  const body = value as { uid?: unknown; name?: unknown; code?: unknown; promoterId?: unknown; amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown };
+  const body = value as { uid?: unknown; name?: unknown; code?: unknown; promoterId?: unknown; amountId?: unknown; amountMinId?: unknown; amountMaxId?: unknown; geneId?: unknown; routeId?: unknown; siteId?: unknown; tagId?: unknown; receptorId?: unknown; responseId?: unknown; threshold?: unknown };
   if (typeof body.promoterId !== "string" || !promotersById.has(body.promoterId)) return null;
   if (typeof body.geneId !== "string" || !genesById.has(body.geneId)) return null;
   const tags = readTagFields(body, body.geneId);
@@ -1091,7 +1124,20 @@ export function sanitizeCassette(value: unknown): Cassette | null {
   const supplied = typeof body.code === "string" ? normalizeCode(body.code) : "";
   const code = /^[A-Z0-9]{3,5}$/.test(supplied) ? supplied : gene?.id ?? body.geneId;
   const uid = typeof body.uid === "string" && body.uid.trim().length > 0 ? body.uid.slice(0, 64) : nextUid();
-  return { uid, name, code, promoterId: body.promoterId, geneId: body.geneId, ...readAmountFields(body, body.promoterId), ...tags };
+  return { uid, name, code, promoterId: body.promoterId, geneId: body.geneId, ...readAmountFields(body, body.promoterId), ...tags, ...readBindingFields(body, body.promoterId) };
+}
+
+function readBindingFields(
+  body: { receptorId?: unknown; responseId?: unknown; threshold?: unknown },
+  promoterId: string | null,
+): { receptorId: string | null; responseId: string | null; threshold: number | null } {
+  if (promoterId !== "COND") return { receptorId: null, responseId: null, threshold: null };
+  const receptorId = typeof body.receptorId === "string" && receptorById(body.receptorId) ? body.receptorId : null;
+  const responseId = typeof body.responseId === "string" && responseById(body.responseId) ? body.responseId : null;
+  const threshold = responseNeedsThreshold(responseId) && typeof body.threshold === "number" && body.threshold >= 0 && body.threshold <= 1
+    ? body.threshold
+    : null;
+  return { receptorId, responseId, threshold };
 }
 
 function normalizeCode(code: string): string {

@@ -1,0 +1,10 @@
+{
+  "id": "refluxin",
+  "title": "Refluxin",
+  "category": "Resources",
+  "meta": "Resources  ·  spent carrier",
+  "body": [
+    "Refluxin is Fluxin after ATP synthase has spent it. A new cell starts with a small pool of it and no Fluxin, so the first fuel has to charge the carrier before any ATP comes back from the cycle. The two stores add up to one pool, and a reductase and ATP synthase pass units back and forth between them.",
+    "Ferron Reductase and Sulfex Reductase each turn one Refluxin into one Fluxin per fuel unit they burn. Ferrosulfex Reductase and Nitroxidex Reductase turn three. When the carrier is all Refluxin, ATP synthase is idle and the cell is waiting on a reductase. A larger pool, from Fluxin Synthase, means a longer coast through a lull."
+  ]
+}

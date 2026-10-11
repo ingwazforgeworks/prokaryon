@@ -1,0 +1,10 @@
+{
+  "id": "fluxin",
+  "title": "Fluxin",
+  "category": "Resources",
+  "meta": "Resources  ·  charged carrier",
+  "body": [
+    "Fluxin is the charged half of the cell's energy carrier. ATP synthase, embedded in the membrane, spends it: two ATP come back, and the carrier is left as Refluxin. A full ATP pool stops the synthase and leaves the Fluxin sitting charged.",
+    "A reductase recharges Refluxin into Fluxin by burning stored fuel. When the carrier is all Fluxin, the reductase has nothing left to recharge and the fuel sits until the synthase catches up. Fluxin Synthase makes the pool larger. The extra units arrive as Refluxin, so the pool is a buffer the cell can coast on, and a reductase still has to fill it."
+  ]
+}

@@ -60,7 +60,7 @@ for (const id of geneIds) {
 }
 
 // 3. Genome viewer category icons (whitelist mirrors genomeViewer.ts).
-for (const slug of ["metabolism", "homeostasis", "morphology", "motility", "perception", "regulation", "reproduction"]) {
+for (const slug of ["metabolism", "homeostasis", "cellshape", "pigmentation", "motility", "perception", "regulation", "reproduction"]) {
   expect(`ui/genome_viewer/categories/${slug}_32x32.png`, `category ${slug}`);
 }
 

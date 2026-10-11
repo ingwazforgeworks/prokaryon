@@ -76,7 +76,8 @@ type TechLabel = {
 const ACCENT: Record<string, string> = {
   Metabolism: "#6fbf7a",
   Homeostasis: "#e2a04a",
-  Morphology: "#8fb4d4",
+  "Cell Shape": "#8fb4d4",
+  Pigmentation: "#d470b8",
   Motility: "#3ec4c0",
   Perception: "#e2d36a",
   Regulation: "#b48ad4",
@@ -178,6 +179,7 @@ async function mountTechTree(): Promise<void> {
 
   const arrangeButton = document.querySelector<HTMLButtonElement>("#tech-arrange");
   const functionalCategoryTabs = document.querySelector<HTMLElement>("#tech-categories-functional");
+  const functionalSubcategoryTabs = document.querySelector<HTMLElement>("#tech-subcategories-functional");
   const regulatoryCategoryTabs = document.querySelector<HTMLElement>("#tech-categories-regulatory");
   const saveLayoutButton = document.querySelector<HTMLButtonElement>("#tech-layout-save");
   const renameButton = document.querySelector<HTMLButtonElement>("#tech-rename");
@@ -234,6 +236,9 @@ async function mountTechTree(): Promise<void> {
   // Category tabs: only one category fills a board at a time. The functional
   // board slices by gene category, the regulatory board by part category.
   let functionalCategory = "Motility";
+  // Subcategory ribbon: a functional category split across several groups
+  // (e.g. Metabolism) gets a second ribbon; null means "All groups".
+  let functionalSubcategory: string | null = null;
   let regulatoryCategory: string = REGULATORY_CATEGORY_ORDER[0];
 
   const categoryOfNode = (board: TreeBoard, node: TechNode): string =>
@@ -262,29 +267,31 @@ async function mountTechTree(): Promise<void> {
 
   const applyCategoryFilter = (board: TreeBoard): void => {
     const category = categoryOf(board);
+    const subcategory = board === functional ? functionalSubcategory : null;
+    const nodeVisible = (node: TechNode): boolean => {
+      if (categoryOfNode(board, node) !== category) return false;
+      if (subcategory && node.groupKey && node.groupKey !== subcategory) return false;
+      return true;
+    };
     for (const node of board.byNode.values()) {
       const button = board.buttons.get(node.id);
-      if (button) button.hidden = categoryOfNode(board, node) !== category;
+      if (button) button.hidden = !nodeVisible(node);
     }
     for (const group of board.groups) {
       group.el.hidden = !group.nodeIds.some((id) => {
         const node = board.byNode.get(id);
-        return node !== undefined && categoryOfNode(board, node) === category;
+        return node !== undefined && nodeVisible(node);
       });
     }
     for (const path of board.paths) {
       const from = board.byNode.get(path.dataset.from ?? "");
       const to = board.byNode.get(path.dataset.to ?? "");
-      const visible =
-        from !== undefined &&
-        to !== undefined &&
-        categoryOfNode(board, from) === category &&
-        categoryOfNode(board, to) === category;
+      const visible = from !== undefined && to !== undefined && nodeVisible(from) && nodeVisible(to);
       // SVG paths have no hidden attribute; display is the reliable switch.
       path.style.display = visible ? "" : "none";
     }
     const selected = board.selectedId ? board.byNode.get(board.selectedId) : undefined;
-    if (selected && categoryOfNode(board, selected) !== category) {
+    if (selected && !nodeVisible(selected)) {
       board.buttons.get(selected.id)?.setAttribute("aria-pressed", "false");
       board.selectedId = null;
       for (const path of board.paths) path.classList.remove("is-lit");
@@ -292,21 +299,73 @@ async function mountTechTree(): Promise<void> {
     }
   };
 
+  const groupMatchesCategory = (board: TreeBoard, group: PlacedGroup): boolean =>
+    group.nodeIds.some((id) => {
+      const node = board.byNode.get(id);
+      return node !== undefined && categoryOfNode(board, node) === categoryOf(board);
+    });
+
+  const syncSubcategoryTabs = (board: TreeBoard): void => {
+    if (!functionalSubcategoryTabs) return;
+    if (board !== functional) {
+      functionalSubcategoryTabs.hidden = true;
+      functionalSubcategoryTabs.replaceChildren();
+      return;
+    }
+    const categoryGroups = board.groups.filter((group) => groupMatchesCategory(board, group));
+    if (categoryGroups.length <= 1) {
+      functionalSubcategoryTabs.hidden = true;
+      functionalSubcategoryTabs.replaceChildren();
+      return;
+    }
+    if (functionalSubcategory && !categoryGroups.some((group) => group.key === functionalSubcategory)) {
+      functionalSubcategory = null;
+    }
+    const makeTab = (subgroup: string, label: string): HTMLButtonElement => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tech-mode";
+      button.dataset.subgroup = subgroup;
+      button.setAttribute("role", "tab");
+      const selected = (subgroup || null) === functionalSubcategory;
+      button.setAttribute("aria-selected", selected ? "true" : "false");
+      button.textContent = label;
+      return button;
+    };
+    functionalSubcategoryTabs.replaceChildren(
+      makeTab("", "All"),
+      ...categoryGroups.map((group) => makeTab(group.key, group.el.querySelector(".tech-group-label")?.textContent ?? group.key)),
+    );
+    functionalSubcategoryTabs.hidden = false;
+  };
+
   const focusCategory = (board: TreeBoard): void => {
-    const group = board.groups.find((item) => !item.el.hidden);
-    if (!group) return;
+    const visible = board.groups.filter((group) => !group.el.hidden);
+    if (!visible.length) return;
     const rect = viewport.getBoundingClientRect();
     const scale = uiScale();
-    const x = parseFloat(group.el.style.left) || 0;
-    const y = parseFloat(group.el.style.top) || 0;
-    const w = parseFloat(group.el.style.width) || group.w;
-    const h = parseFloat(group.el.style.height) || group.h;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const group of visible) {
+      const x = parseFloat(group.el.style.left) || 0;
+      const y = parseFloat(group.el.style.top) || 0;
+      const w = parseFloat(group.el.style.width) || group.w;
+      const h = parseFloat(group.el.style.height) || group.h;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + w);
+      maxY = Math.max(maxY, y + h);
+    }
+    const w = maxX - minX;
+    const h = maxY - minY;
     board.camScale = Math.min(
       MAX_SCALE,
       Math.max(MIN_SCALE, Math.min((rect.width / scale - 48) / w, (rect.height / scale - 48) / h)),
     );
-    board.camX = rect.width / scale / 2 - (x + w / 2) * board.camScale;
-    board.camY = rect.height / scale / 2 - (y + h / 2) * board.camScale;
+    board.camX = rect.width / scale / 2 - (minX + w / 2) * board.camScale;
+    board.camY = rect.height / scale / 2 - (minY + h / 2) * board.camScale;
     applyCamera();
   };
 
@@ -377,6 +436,7 @@ async function mountTechTree(): Promise<void> {
     if (regulatoryCategoryTabs) regulatoryCategoryTabs.hidden = board !== regulatory;
     syncCategoryTabs(board);
     applyCategoryFilter(board);
+    syncSubcategoryTabs(board);
     applyCamera();
     if (board.selectedId) {
       const node = board.byNode.get(board.selectedId);
@@ -472,8 +532,10 @@ async function mountTechTree(): Promise<void> {
         const category = button.dataset.category;
         if (!category || category === categoryOf(board) || active !== board) return;
         setCategoryOf(board, category);
+        if (board === functional) functionalSubcategory = null;
         syncCategoryTabs(board);
         applyCategoryFilter(board);
+        syncSubcategoryTabs(board);
         focusCategory(board);
         playCue("tab");
       });
@@ -481,6 +543,17 @@ async function mountTechTree(): Promise<void> {
   };
   wireCategoryTabs(functional, functionalCategoryTabs);
   wireCategoryTabs(regulatory, regulatoryCategoryTabs);
+  functionalSubcategoryTabs?.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".tech-mode");
+    if (!button || active !== functional) return;
+    const next = button.dataset.subgroup || null;
+    if (next === functionalSubcategory) return;
+    functionalSubcategory = next;
+    syncSubcategoryTabs(functional);
+    applyCategoryFilter(functional);
+    focusCategory(functional);
+    playCue("tab");
+  });
   if (arrangeButton) {
     arrangeButton.addEventListener("click", () => {
       arranging = !arranging;
@@ -769,6 +842,7 @@ async function mountTechTree(): Promise<void> {
   viewport.setAttribute("aria-label", functional.viewportLabel);
   syncCategoryTabs(functional);
   applyCategoryFilter(functional);
+  syncSubcategoryTabs(functional);
   applyCamera();
   new MutationObserver(fit).observe(viewer, { attributes: true, attributeFilter: ["hidden"] });
   fit();

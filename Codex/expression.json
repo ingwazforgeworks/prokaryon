@@ -1,0 +1,10 @@
+{
+  "id": "expression",
+  "title": "Expression",
+  "category": "Concepts",
+  "meta": "Concepts  ·  constructs",
+  "body": [
+    "A construct is a promoter, an amount, a gene, and any tags it needs. Always On holds a steady amount. Oscillatory sweeps between its minimum and maximum about every four seconds. Co-oscillatory runs that same clock upside down, loud while the other is quiet. Conditional reads the Osmolyn Receptor and scales the gene by the response you chose: follow the brine, invert it, wait for a threshold, or shut off while the receptor is reporting.",
+    "The amount tiles run from silent, through a trace, up to hyperexpression. Silent keeps the gene in the genome and makes no protein. Stronger expression makes more protein and spends more ATP. The upkeep is on the construct in the genome viewer, and the cell pays it from its own ATP pool."
+  ]
+}

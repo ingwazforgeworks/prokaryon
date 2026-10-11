@@ -127,6 +127,60 @@ function serveMusic(middlewares: Connect.Server): void {
   serveAudioFolder(middlewares, "/theme", themeRoot, false);
 }
 
+/** Most authoring documents. Terrain edits are larger; see TERRAIN_BODY_LIMIT. */
+const AUTHORING_BODY_LIMIT = 1_000_000;
+const GENE_DATA_BODY_LIMIT = 2_000_000;
+/** terrain-edits.json is already about 2 MB, so the cap sits above that. */
+const TERRAIN_BODY_LIMIT = 8_000_000;
+
+/**
+ * Reads a JSON POST body. Ends the response and resolves undefined when the
+ * body is too large or is not JSON. The caller writes the specific 400 when
+ * the document parses but does not match the store.
+ */
+function readJsonBody(request: IncomingMessage, response: ServerResponse, limit: number): Promise<unknown | undefined> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let settled = false;
+    const finish = (value: unknown | undefined): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    request.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > limit) {
+        response.statusCode = 413;
+        response.end("too large");
+        request.destroy();
+        finish(undefined);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("error", () => {
+      if (!response.writableEnded) {
+        response.statusCode = 400;
+        response.end("bad request");
+      }
+      finish(undefined);
+    });
+    request.on("end", () => {
+      if (settled) return;
+      try {
+        finish(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        if (!response.writableEnded) {
+          response.statusCode = 400;
+          response.end("bad request");
+        }
+        finish(undefined);
+      }
+    });
+  });
+}
+
 function saveGenomeState(middlewares: Connect.Server): void {
   middlewares.use("/api/genome-state", (request, response, next) => {
     if (request.method !== "POST") {
@@ -138,47 +192,23 @@ function saveGenomeState(middlewares: Connect.Server): void {
 }
 
 function writeGenomeState(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    let bytes = 0;
-    request.on("data", (chunk: Buffer) => {
-      bytes += chunk.length;
-      if (bytes > 1_000_000) {
-        response.statusCode = 413;
-        response.end("too large");
-        request.destroy();
-        resolve();
-        return;
+  return readJsonBody(request, response, AUTHORING_BODY_LIMIT).then((parsed) => {
+    if (parsed === undefined) return;
+    try {
+      const body = parsed as { v?: unknown; draft?: unknown; genome?: unknown };
+      if (body.v !== 1 || !body.draft || typeof body.draft !== "object" || !Array.isArray(body.genome)) {
+        throw new Error("invalid genome state");
       }
-      chunks.push(chunk);
-    });
-    request.on("error", () => {
-      response.statusCode = 400;
-      response.end("bad request");
-      resolve();
-    });
-    request.on("end", () => {
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-          v?: unknown;
-          draft?: unknown;
-          genome?: unknown;
-        };
-        if (body.v !== 1 || !body.draft || typeof body.draft !== "object" || !Array.isArray(body.genome)) {
-          throw new Error("invalid genome state");
-        }
-        fs.mkdirSync(path.dirname(genomeStateFile), { recursive: true });
-        fs.writeFileSync(genomeStateFile, JSON.stringify({ v: 1, draft: body.draft, genome: body.genome }));
-        response.statusCode = 204;
-        response.end();
-      } catch {
-        if (!response.writableEnded) {
-          response.statusCode = 400;
-          response.end("invalid genome state");
-        }
+      fs.mkdirSync(path.dirname(genomeStateFile), { recursive: true });
+      fs.writeFileSync(genomeStateFile, JSON.stringify({ v: 1, draft: body.draft, genome: body.genome }));
+      response.statusCode = 204;
+      response.end();
+    } catch {
+      if (!response.writableEnded) {
+        response.statusCode = 400;
+        response.end("invalid genome state");
       }
-      resolve();
-    });
+    }
   });
 }
 
@@ -193,43 +223,23 @@ function saveTechLayout(middlewares: Connect.Server): void {
 }
 
 function writeTechLayout(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    let bytes = 0;
-    request.on("data", (chunk: Buffer) => {
-      bytes += chunk.length;
-      if (bytes > 1_000_000) {
-        response.statusCode = 413;
-        response.end("too large");
-        request.destroy();
-        resolve();
-        return;
+  return readJsonBody(request, response, AUTHORING_BODY_LIMIT).then((parsed) => {
+    if (parsed === undefined) return;
+    try {
+      const body = parsed as { v?: unknown; functional?: unknown; regulatory?: unknown };
+      if (body.v !== 2) throw new Error("invalid tech layout");
+      const functional = readTechTree(body.functional);
+      const regulatory = readTechTree(body.regulatory);
+      fs.mkdirSync(path.dirname(techLayoutFile), { recursive: true });
+      fs.writeFileSync(techLayoutFile, JSON.stringify({ v: 2, functional, regulatory }));
+      response.statusCode = 204;
+      response.end();
+    } catch {
+      if (!response.writableEnded) {
+        response.statusCode = 400;
+        response.end("invalid tech layout");
       }
-      chunks.push(chunk);
-    });
-    request.on("error", () => {
-      response.statusCode = 400;
-      response.end("bad request");
-      resolve();
-    });
-    request.on("end", () => {
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { v?: unknown; functional?: unknown; regulatory?: unknown };
-        if (body.v !== 2) throw new Error("invalid tech layout");
-        const functional = readTechTree(body.functional);
-        const regulatory = readTechTree(body.regulatory);
-        fs.mkdirSync(path.dirname(techLayoutFile), { recursive: true });
-        fs.writeFileSync(techLayoutFile, JSON.stringify({ v: 2, functional, regulatory }));
-        response.statusCode = 204;
-        response.end();
-      } catch {
-        if (!response.writableEnded) {
-          response.statusCode = 400;
-          response.end("invalid tech layout");
-        }
-      }
-      resolve();
-    });
+    }
   });
 }
 
@@ -332,43 +342,23 @@ function saveTechUnlocks(middlewares: Connect.Server): void {
 }
 
 function writeTechUnlocks(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    let bytes = 0;
-    request.on("data", (chunk: Buffer) => {
-      bytes += chunk.length;
-      if (bytes > 1_000_000) {
-        response.statusCode = 413;
-        response.end("too large");
-        request.destroy();
-        resolve();
-        return;
+  return readJsonBody(request, response, AUTHORING_BODY_LIMIT).then((parsed) => {
+    if (parsed === undefined) return;
+    try {
+      const body = parsed as { v?: unknown; unlocked?: unknown };
+      if (body.v !== 1 || !Array.isArray(body.unlocked)) throw new Error("invalid tech unlocks");
+      const unlocked = body.unlocked.map((id) => readToken(id));
+      if (new Set(unlocked).size !== unlocked.length) throw new Error("invalid tech unlocks");
+      fs.mkdirSync(path.dirname(techUnlocksFile), { recursive: true });
+      fs.writeFileSync(techUnlocksFile, JSON.stringify({ v: 1, unlocked }));
+      response.statusCode = 204;
+      response.end();
+    } catch {
+      if (!response.writableEnded) {
+        response.statusCode = 400;
+        response.end("invalid tech unlocks");
       }
-      chunks.push(chunk);
-    });
-    request.on("error", () => {
-      response.statusCode = 400;
-      response.end("bad request");
-      resolve();
-    });
-    request.on("end", () => {
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { v?: unknown; unlocked?: unknown };
-        if (body.v !== 1 || !Array.isArray(body.unlocked)) throw new Error("invalid tech unlocks");
-        const unlocked = body.unlocked.map((id) => readToken(id));
-        if (new Set(unlocked).size !== unlocked.length) throw new Error("invalid tech unlocks");
-        fs.mkdirSync(path.dirname(techUnlocksFile), { recursive: true });
-        fs.writeFileSync(techUnlocksFile, JSON.stringify({ v: 1, unlocked }));
-        response.statusCode = 204;
-        response.end();
-      } catch {
-        if (!response.writableEnded) {
-          response.statusCode = 400;
-          response.end("invalid tech unlocks");
-        }
-      }
-      resolve();
-    });
+    }
   });
 }
 
@@ -383,54 +373,34 @@ function saveGeneData(middlewares: Connect.Server): void {
 }
 
 function writeGeneData(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    let bytes = 0;
-    request.on("data", (chunk: Buffer) => {
-      bytes += chunk.length;
-      if (bytes > 2_000_000) {
-        response.statusCode = 413;
-        response.end("too large");
-        request.destroy();
-        resolve();
-        return;
+  return readJsonBody(request, response, GENE_DATA_BODY_LIMIT).then((parsed) => {
+    if (parsed === undefined) return;
+    try {
+      const body = parsed as { v?: unknown; genes?: unknown };
+      if (body.v !== 1 || typeof body.genes !== "object" || body.genes === null || Array.isArray(body.genes)) {
+        throw new Error("invalid gene data");
       }
-      chunks.push(chunk);
-    });
-    request.on("error", () => {
-      response.statusCode = 400;
-      response.end("bad request");
-      resolve();
-    });
-    request.on("end", () => {
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { v?: unknown; genes?: unknown };
-        if (body.v !== 1 || typeof body.genes !== "object" || body.genes === null || Array.isArray(body.genes)) {
-          throw new Error("invalid gene data");
+      const genes: Record<string, Record<string, string>> = {};
+      for (const [tag, value] of Object.entries(body.genes)) {
+        if (!/^[A-Za-z0-9]{1,8}$/.test(tag)) throw new Error("invalid gene data");
+        if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("invalid gene data");
+        const record: Record<string, string> = {};
+        for (const [field, fieldValue] of Object.entries(value)) {
+          if (typeof fieldValue !== "string" || fieldValue.length > 2000 || field.length > 40) throw new Error("invalid gene data");
+          record[field] = fieldValue;
         }
-        const genes: Record<string, Record<string, string>> = {};
-        for (const [tag, value] of Object.entries(body.genes)) {
-          if (!/^[A-Za-z0-9]{1,8}$/.test(tag)) throw new Error("invalid gene data");
-          if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("invalid gene data");
-          const record: Record<string, string> = {};
-          for (const [field, fieldValue] of Object.entries(value)) {
-            if (typeof fieldValue !== "string" || fieldValue.length > 2000 || field.length > 40) throw new Error("invalid gene data");
-            record[field] = fieldValue;
-          }
-          genes[tag] = record;
-        }
-        fs.mkdirSync(path.dirname(geneDataFile), { recursive: true });
-        fs.writeFileSync(geneDataFile, JSON.stringify({ v: 1, genes }, null, 2));
-        response.statusCode = 204;
-        response.end();
-      } catch {
-        if (!response.writableEnded) {
-          response.statusCode = 400;
-          response.end("invalid gene data");
-        }
+        genes[tag] = record;
       }
-      resolve();
-    });
+      fs.mkdirSync(path.dirname(geneDataFile), { recursive: true });
+      fs.writeFileSync(geneDataFile, JSON.stringify({ v: 1, genes }, null, 2));
+      response.statusCode = 204;
+      response.end();
+    } catch {
+      if (!response.writableEnded) {
+        response.statusCode = 400;
+        response.end("invalid gene data");
+      }
+    }
   });
 }
 
@@ -445,42 +415,35 @@ function saveTerrainEdits(middlewares: Connect.Server): void {
 }
 
 function writeTerrainEdits(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    request.on("data", (chunk: Buffer) => chunks.push(chunk));
-    request.on("error", () => {
-      response.statusCode = 400;
-      response.end("bad request");
-      resolve();
-    });
-    request.on("end", () => {
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-          removed?: unknown;
-          added?: unknown;
-          lights?: unknown;
-          bubbles?: unknown;
-          heats?: unknown;
-          decorations?: unknown;
-        };
-        if (!Array.isArray(body.removed) || !Array.isArray(body.added)) throw new Error("invalid edits");
-        const lights = Array.isArray(body.lights) ? body.lights : [];
-        const bubbles = Array.isArray(body.bubbles) ? body.bubbles : [];
-        const heats = Array.isArray(body.heats) ? body.heats : [];
-        const decorations = Array.isArray(body.decorations) ? body.decorations : [];
-        fs.mkdirSync(path.dirname(editsFile), { recursive: true });
-        fs.writeFileSync(
-          editsFile,
-          JSON.stringify({ removed: body.removed, added: body.added, lights, bubbles, heats, decorations }),
-        );
-        response.statusCode = 204;
-        response.end();
-      } catch {
+  return readJsonBody(request, response, TERRAIN_BODY_LIMIT).then((parsed) => {
+    if (parsed === undefined) return;
+    try {
+      const body = parsed as {
+        removed?: unknown;
+        added?: unknown;
+        lights?: unknown;
+        bubbles?: unknown;
+        heats?: unknown;
+        decorations?: unknown;
+      };
+      if (!Array.isArray(body.removed) || !Array.isArray(body.added)) throw new Error("invalid edits");
+      const lights = Array.isArray(body.lights) ? body.lights : [];
+      const bubbles = Array.isArray(body.bubbles) ? body.bubbles : [];
+      const heats = Array.isArray(body.heats) ? body.heats : [];
+      const decorations = Array.isArray(body.decorations) ? body.decorations : [];
+      fs.mkdirSync(path.dirname(editsFile), { recursive: true });
+      fs.writeFileSync(
+        editsFile,
+        JSON.stringify({ removed: body.removed, added: body.added, lights, bubbles, heats, decorations }),
+      );
+      response.statusCode = 204;
+      response.end();
+    } catch {
+      if (!response.writableEnded) {
         response.statusCode = 400;
         response.end("invalid edits");
       }
-      resolve();
-    });
+    }
   });
 }
 
